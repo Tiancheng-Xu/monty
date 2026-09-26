@@ -511,7 +511,7 @@ If you are reviewing or contributing to Monty, two areas carry most of the weigh
 
 - `crates/monty/src/heap/` — the heap arena, free list and reference counting.
 - `crates/monty-fs/src/mount_table.rs` — the mount boundary: the `Dir` descriptor every filesystem operation runs
-    against, with `path.rs` beside it holding the virtual-path policy.
+    against, with `path_security.rs` beside it holding the virtual-path policy.
 
 Changes to any of them need careful security review.
 The repository's [`review-security` skill](https://github.com/pydantic/monty/tree/main/.agents/skills/review-security)

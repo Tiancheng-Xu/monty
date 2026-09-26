@@ -20,7 +20,7 @@ use super::{
     dispatch::{FsRequest, file_handle_result},
     error::MountError,
     overlay_state::{ENTRY_MEMORY_USAGE, OverlayEntry, OverlayFile, OverlayFileRef, OverlayState},
-    path::{
+    path_security::{
         MountRelativePath, reject_drive_or_unc_segments, reject_null_bytes, resolve_virtual_path, strip_mount_prefix,
     },
 };

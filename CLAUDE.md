@@ -131,14 +131,14 @@ that is mounted. This is enforced by:
 - Null byte rejection in all paths
 
 Path confinement is **structural**, not a check: `Mount::dir` (in
-`crates/monty-fs/src/mount_table.rs`) is the boundary; `path.rs` (public as
-`monty_fs::path`, so a relay serving its own mounts applies the same policy) is
-now only path policy. The cost is that an absolute symlink target is never
+`crates/monty-fs/src/mount_table.rs`) is the boundary; `path_security.rs` (public
+as `monty_fs::path_security`, so a relay serving its own mounts applies the same
+policy) is now only path policy. The cost is that an absolute symlink target is never
 followed, even inside the mount (see `limitations/filesystem.md`) — do not
 "fix" that by comparing against the mount's host path, which restores the
 check-then-use this removes.
 
-**Changes to `mount_table.rs` or `path.rs` require careful security
+**Changes to `mount_table.rs` or `path_security.rs` require careful security
 review.** The `crates/monty/src/heap/` module and the mount boundary are the most security-critical
 code in the codebase.
 

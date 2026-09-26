@@ -16,7 +16,7 @@ use super::{
     },
     dispatch::{FsRequest, file_handle_result},
     error::MountError,
-    path::{MountRelativePath, resolve_virtual_path},
+    path_security::{MountRelativePath, resolve_virtual_path},
 };
 
 /// Executes a parsed filesystem request directly against the host filesystem.

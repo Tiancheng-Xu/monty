@@ -19,7 +19,7 @@ use super::{
     dispatch,
     error::MountError,
     mount_mode::MountMode,
-    path::{contains_null_byte, path_matches_mount, reject_overlong_path},
+    path_security::{contains_null_byte, path_matches_mount, reject_overlong_path},
 };
 
 /// Default aggregate memory budget for one mount: 100 MB in decimal bytes.
