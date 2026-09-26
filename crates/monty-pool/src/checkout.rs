@@ -22,7 +22,7 @@ use monty_proto::{
 use monty_types::{
     AssertMessageAnnotations, CallArgs, DEFAULT_MAX_SUSPENSIONS, ExcType, ExtFunctionResult, MONTY_VERSION,
     MontyException, MontyObject, MontyUuid, NameLookupResult, NamedValues, OsFunctionCall, OsPolicy, PrintStream,
-    ResourceLimits, SleepMode, SourceRange, TypeCheckingConfig, validate_cwd,
+    ResourceLimits, SleepMode, SourceRange, TypeCheckingConfig, normalize_virtual_path, validate_cwd,
 };
 #[cfg(feature = "telemetry")]
 use opentelemetry::trace::{FutureExt, TraceContextExt};
@@ -77,6 +77,10 @@ pub struct ReplConfig {
     pub os_policy: OsPolicy,
     /// Whether a serving relay may store the session; subprocess workers ignore it.
     pub persistence: Persistence,
+    /// Volumes a serving relay mounts into the session from its own store.
+    /// A subprocess worker has no store, so [`Pool::checkout`](crate::Pool::checkout)
+    /// on that transport refuses a non-empty list.
+    pub volumes: Vec<VolumeMount>,
 }
 
 /// How a serving relay (`monty-server`) treats a session's state.
@@ -106,6 +110,159 @@ impl From<Persistence> for pb::Persistence {
     }
 }
 
+/// A volume a serving relay (`monty-server`) mounts into the session: a
+/// directory kept in the relay's store, served to the sandbox by the relay
+/// itself, so neither the worker nor this host sees its filesystem calls.
+///
+/// The volume is identified by a UUID the host chooses; knowing it is the
+/// capability to mount it, and a volume nobody has written to mounts as an
+/// empty directory. The relay validates the mount when the session is
+/// configured and refuses the checkout with `PoolError::Crashed` on a bad
+/// path, a duplicate, or a missing eager file.
+// non_exhaustive: a relay may grow new mount options
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct VolumeMount {
+    /// Absolute, normalized sandbox path the volume appears at.
+    pub virtual_path: String,
+    /// The volume's ID.
+    pub volume_id: MontyUuid,
+    /// What the sandbox may do to the volume.
+    pub mode: VolumeMode,
+    /// Mount-relative paths the relay pulls into memory before any code runs;
+    /// a trailing `/` names a directory whose every file is pulled.
+    pub eager: Vec<String>,
+    /// A label the relay records with the volume the first time it is
+    /// mounted and never rewrites.
+    pub name: Option<String>,
+}
+
+impl VolumeMount {
+    /// A mount of `volume_id` at `virtual_path` with no eager entries and no name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PoolError::Runtime`] wrapping a `ValueError` if the virtual
+    /// path is not absolute.
+    pub fn new(virtual_path: &str, volume_id: MontyUuid, mode: VolumeMode) -> Result<Self, PoolError> {
+        if virtual_path.starts_with('/') {
+            Ok(Self {
+                virtual_path: normalize_virtual_path(virtual_path).into_owned(),
+                volume_id,
+                mode,
+                eager: Vec::new(),
+                name: None,
+            })
+        } else {
+            Err(value_error(format!(
+                "virtual path must be absolute, got: '{virtual_path}'"
+            )))
+        }
+    }
+
+    /// Sets the mount-relative paths pulled into the relay's memory before the
+    /// session runs. The relay checks them: a missing file refuses the session.
+    #[must_use]
+    pub fn with_eager(mut self, paths: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.eager = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Sets the label recorded with the volume by its first mount.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PoolError::Runtime`] wrapping a `ValueError` if the name is
+    /// empty, longer than 128 bytes, or contains a control character.
+    pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, PoolError> {
+        let name = name.into();
+        if name.is_empty() || name.len() > VOLUME_NAME_MAX {
+            Err(value_error(format!(
+                "volume name must be 1 to {VOLUME_NAME_MAX} bytes, got {} bytes",
+                name.len()
+            )))
+        } else if name.chars().any(char::is_control) {
+            Err(value_error(
+                "volume name must not contain control characters".to_owned(),
+            ))
+        } else {
+            self.name = Some(name);
+            Ok(self)
+        }
+    }
+}
+
+/// Longest [`VolumeMount::name`] a relay records, in bytes.
+const VOLUME_NAME_MAX: usize = 128;
+
+impl From<&VolumeMount> for pb::VolumeMount {
+    fn from(mount: &VolumeMount) -> Self {
+        Self {
+            virtual_path: mount.virtual_path.clone(),
+            volume_id: Some(pb::Uuid::from(&mount.volume_id)),
+            mode: pb::VolumeMode::from(mount.mode).into(),
+            eager: mount.eager.clone().into(),
+            name: mount.name.clone(),
+        }
+    }
+}
+
+/// What a [`VolumeMount`] lets the sandbox do to its volume. The words are
+/// those of [`MountSpecMode`], but `Overlay` data here belongs to the
+/// connection: it survives feeds, is cleared by a reset, and is lost when the
+/// session is resumed on another connection.
+// non_exhaustive: a relay may grow new modes
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum VolumeMode {
+    /// Reads from the store; writes raise `PermissionError` in the sandbox.
+    #[default]
+    ReadOnly,
+    /// Writes go to the store as they happen; the last writer wins.
+    ReadWrite,
+    /// Reads fall through to the store; writes stay in the relay's memory for
+    /// the connection and are never stored.
+    Overlay,
+}
+
+impl VolumeMode {
+    /// Parses the Python spelling: `"read-only"`, `"read-write"` or `"overlay"`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the `ValueError` message for any other string.
+    pub fn from_mode_str(mode: &str) -> Result<Self, String> {
+        match mode {
+            "read-only" => Ok(Self::ReadOnly),
+            "read-write" => Ok(Self::ReadWrite),
+            "overlay" => Ok(Self::Overlay),
+            other => Err(format!(
+                "Invalid mode '{other}', expected 'read-only', 'read-write', or 'overlay'"
+            )),
+        }
+    }
+
+    /// The Python spelling, the inverse of [`Self::from_mode_str`].
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read-only",
+            Self::ReadWrite => "read-write",
+            Self::Overlay => "overlay",
+        }
+    }
+}
+
+impl From<VolumeMode> for pb::VolumeMode {
+    fn from(mode: VolumeMode) -> Self {
+        match mode {
+            VolumeMode::ReadOnly => Self::ReadOnly,
+            VolumeMode::ReadWrite => Self::ReadWrite,
+            VolumeMode::Overlay => Self::Overlay,
+        }
+    }
+}
+
 impl Default for ReplConfig {
     fn default() -> Self {
         Self {
@@ -118,6 +275,7 @@ impl Default for ReplConfig {
             print_flush_interval: None,
             os_policy: OsPolicy::default(),
             persistence: Persistence::default(),
+            volumes: Vec::new(),
         }
     }
 }
@@ -2137,6 +2295,7 @@ fn configure_request(repl: &ReplConfig) -> pb::ParentRequest {
         print_flush_interval_ms: repl.print_flush_interval.map(flush_interval_ms),
         os_policy: Some((&repl.os_policy).into()),
         persistence: pb::Persistence::from(repl.persistence).into(),
+        volumes: repl.volumes.iter().map(Into::into).collect(),
     }))
 }
 
@@ -2203,6 +2362,11 @@ pub(crate) fn request(kind: pb::parent_request::Kind) -> pb::ParentRequest {
 /// Converts a shared requirement-validation failure into a session-preserving
 /// Python `ValueError`.
 fn invalid_requirement(message: String) -> PoolError {
+    value_error(message)
+}
+
+/// A host-side argument error as the Python `ValueError` a binding raises.
+fn value_error(message: String) -> PoolError {
     PoolError::Runtime(MontyException::new(ExcType::ValueError, Some(message)))
 }
 
@@ -2216,7 +2380,7 @@ fn min_deadline(a: Option<Duration>, b: Option<Duration>) -> Option<Duration> {
 /// Checks an explicit working directory with [`validate_cwd`], raising its
 /// message as a session-preserving `ValueError`.
 fn checked_cwd(cwd: &str) -> Result<String, PoolError> {
-    validate_cwd(cwd).map_err(|message| PoolError::Runtime(MontyException::new(ExcType::ValueError, Some(message))))
+    validate_cwd(cwd).map_err(value_error)
 }
 
 /// Builds the parent-side [`MountTable`] for one feed from its (non-empty)

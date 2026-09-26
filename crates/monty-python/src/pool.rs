@@ -43,7 +43,7 @@ use std::{
 
 use monty_pool::{
     Checkout, CheckoutOptions, DEFAULT_DURATION_LIMIT_GRACE, MountSpec, OnPrint, Persistence, Pool, PoolConfig,
-    PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent,
+    PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent, VolumeMount,
 };
 use monty_proto::python::{InstanceStore, exc_py_to_monty, monty_to_py, py_to_monty_value};
 use monty_types::{
@@ -76,7 +76,7 @@ use crate::{
     },
     get_not_handled,
     limits::extract_limits,
-    mount::PyMountDir,
+    mount::{PyMountDir, PyVolume},
     os_policy::OsPolicyArg,
     print_target::PrintTarget,
     snapshot::{DriveContext, build_snapshot, feed_start_async, feed_start_sync},
@@ -741,6 +741,7 @@ impl PyAsyncMontyWebsocket {
         print_flush_interval = None,
         os_policy = None,
         ephemeral = None,
+        volumes = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn checkout(
@@ -756,28 +757,31 @@ impl PyAsyncMontyWebsocket {
         print_flush_interval: Option<f64>,
         os_policy: Option<OsPolicyArg>,
         ephemeral: Option<bool>,
+        volumes: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyAsyncMontySession> {
+        let mut repl_config = parse_repl_config(
+            py,
+            script_name,
+            limits,
+            type_check,
+            type_check_stubs,
+            TypeCheckingConfig {
+                format: type_check_format.unwrap_or_default().0,
+                color: type_check_color,
+            },
+            assert_message_annotations,
+            print_flush_interval,
+            os_policy.unwrap_or_default().0,
+            match ephemeral {
+                None => Persistence::ServerDefault,
+                Some(true) => Persistence::Ephemeral,
+                Some(false) => Persistence::Stored,
+            },
+        )?;
+        repl_config.volumes = extract_volumes(volumes)?;
         Ok(PyAsyncMontySession {
             pool: Arc::clone(&self.pool),
-            repl_config: parse_repl_config(
-                py,
-                script_name,
-                limits,
-                type_check,
-                type_check_stubs,
-                TypeCheckingConfig {
-                    format: type_check_format.unwrap_or_default().0,
-                    color: type_check_color,
-                },
-                assert_message_annotations,
-                print_flush_interval,
-                os_policy.unwrap_or_default().0,
-                match ephemeral {
-                    None => Persistence::ServerDefault,
-                    Some(true) => Persistence::Ephemeral,
-                    Some(false) => Persistence::Stored,
-                },
-            )?,
+            repl_config,
             instances: InstanceStore::new(py),
             checkout: Arc::new(AsyncMutex::new(None)),
             connect_headers: self.connect_headers.as_ref().map(|cb| cb.clone_ref(py)),
@@ -1310,6 +1314,8 @@ pub(crate) fn parse_repl_config(
             .transpose()?,
         os_policy,
         persistence,
+        // set by the websocket pool's `checkout`; the subprocess pools take none
+        volumes: Vec::new(),
     })
 }
 
@@ -2138,6 +2144,28 @@ fn extract_mount_specs(mount: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<MountSp
     Err(PyTypeError::new_err(
         "mount must be a MountDir, a list of MountDir, or None",
     ))
+}
+
+/// Extracts `Volume | Sequence[Volume] | None` into the mounts a serving relay
+/// reads from `Configure`; the relay validates them as a set.
+fn extract_volumes(volumes: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<VolumeMount>> {
+    let Some(volumes) = volumes else {
+        return Ok(vec![]);
+    };
+    if let Ok(single) = volumes.extract::<PyRef<'_, PyVolume>>() {
+        return Ok(vec![single.mount()]);
+    }
+    let type_error = || PyTypeError::new_err("volumes must be a Volume, a sequence of Volume, or None");
+    volumes
+        .try_iter()
+        .map_err(|_| type_error())?
+        .map(|item| {
+            Ok(item?
+                .extract::<PyRef<'_, PyVolume>>()
+                .map_err(|_| type_error())?
+                .mount())
+        })
+        .collect()
 }
 
 /// Maps a pool failure onto the Python exception hierarchy.

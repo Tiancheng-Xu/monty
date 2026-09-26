@@ -46,6 +46,20 @@ fn every_schema_repeated_field_is_budgeted() {
         |message: &pb::RaisedException| &message.traceback,
     );
     check_repeated(
+        "monty.v1.Configure.volumes",
+        13,
+        WireType::LengthDelimited,
+        &[],
+        |message: &pb::Configure| &message.volumes,
+    );
+    check_repeated(
+        "monty.v1.VolumeMount.eager",
+        4,
+        WireType::LengthDelimited,
+        &[],
+        |message: &pb::VolumeMount| &message.eager,
+    );
+    check_repeated(
         "monty.v1.Feed.inputs",
         2,
         WireType::LengthDelimited,

@@ -19,7 +19,7 @@ use super::{
     dispatch,
     error::MountError,
     mount_mode::MountMode,
-    path_security::{contains_null_byte, reject_overlong_path},
+    path::{contains_null_byte, path_matches_mount, reject_overlong_path},
 };
 
 /// Default aggregate memory budget for one mount: 100 MB in decimal bytes.
@@ -461,14 +461,4 @@ fn mounts_overlap(a: &Mount, b: &Mount) -> bool {
         || a.host_path().starts_with(b.host_path())
         || b.host_path().starts_with(a.host_path())
         || a.virtual_path() == b.virtual_path()
-}
-
-/// Checks whether `normalized_path` falls under `mount_virtual_path`.
-fn path_matches_mount(normalized_path: &str, mount_virtual_path: &str) -> bool {
-    if mount_virtual_path == "/" || normalized_path == mount_virtual_path {
-        true
-    } else {
-        normalized_path.starts_with(mount_virtual_path)
-            && normalized_path.as_bytes().get(mount_virtual_path.len()) == Some(&b'/')
-    }
 }

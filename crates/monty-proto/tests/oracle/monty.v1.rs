@@ -784,6 +784,33 @@ pub struct Configure {
     /// it.
     #[prost(enumeration = "Persistence", tag = "12")]
     pub persistence: i32,
+    /// Relay-only: directories a serving relay mounts into the session's sandbox
+    /// from its own store and serves itself. Children ignore it; the subprocess
+    /// transport refuses a session that names any.
+    #[prost(message, repeated, tag = "13")]
+    pub volumes: ::prost::alloc::vec::Vec<VolumeMount>,
+}
+/// One volume mounted into a session by a serving relay. See
+/// `Configure.volumes`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct VolumeMount {
+    /// Absolute, normalized sandbox path the volume appears at.
+    #[prost(string, tag = "1")]
+    pub virtual_path: ::prost::alloc::string::String,
+    /// The volume's ID, chosen by the host; knowing it is the capability to
+    /// mount it.
+    #[prost(message, optional, tag = "2")]
+    pub volume_id: ::core::option::Option<Uuid>,
+    #[prost(enumeration = "VolumeMode", tag = "3")]
+    pub mode: i32,
+    /// Mount-relative paths to pull into memory before the session runs; a
+    /// trailing `/` names a directory whose every file is pulled.
+    #[prost(string, repeated, tag = "4")]
+    pub eager: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// A label the relay records with the volume the first time it is mounted
+    /// and never rewrites; absent, the record has no name.
+    #[prost(string, optional, tag = "5")]
+    pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Executes one snippet against the session. Turn ends with `Complete`,
 /// `Error`, `TypingError`, or a suspension event.
@@ -1429,6 +1456,43 @@ impl Persistence {
             "PERSISTENCE_UNSPECIFIED" => Some(Self::Unspecified),
             "PERSISTENCE_EPHEMERAL" => Some(Self::Ephemeral),
             "PERSISTENCE_STORED" => Some(Self::Stored),
+            _ => None,
+        }
+    }
+}
+/// What a mount lets the sandbox do to its volume; children ignore it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum VolumeMode {
+    /// Read as read-only.
+    Unspecified = 0,
+    /// Writes raise `PermissionError`.
+    ReadOnly = 1,
+    /// Writes go to the store as they happen; the last writer wins.
+    ReadWrite = 2,
+    /// Writes are kept in the relay's memory for the connection, never stored.
+    Overlay = 3,
+}
+impl VolumeMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "VOLUME_MODE_UNSPECIFIED",
+            Self::ReadOnly => "VOLUME_MODE_READ_ONLY",
+            Self::ReadWrite => "VOLUME_MODE_READ_WRITE",
+            Self::Overlay => "VOLUME_MODE_OVERLAY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "VOLUME_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "VOLUME_MODE_READ_ONLY" => Some(Self::ReadOnly),
+            "VOLUME_MODE_READ_WRITE" => Some(Self::ReadWrite),
+            "VOLUME_MODE_OVERLAY" => Some(Self::Overlay),
             _ => None,
         }
     }

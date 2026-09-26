@@ -223,6 +223,11 @@ The remote is free to determine what `Checkout::restore` will do, for example it
 other consumers or it may issue a new session.
 A remote without persistence refuses `Checkout::dump` and `Checkout::restore` with `PoolError::Runtime`, and the
 session carries on.
+A serving relay with a store can also mount **volumes**, directories it keeps in that store and serves to the sandbox
+itself: `ReplConfig::volumes` lists them as `VolumeMount`s (a virtual path, the volume's UUID, a `VolumeMode`
+defaulting to read-only, eager entries and an optional name), sent on `Configure` and re-sent on a resume.
+The subprocess transport has no store, so `Pool::checkout` refuses a non-empty list with `PoolError::Spawn`; a relay
+that cannot make a mount refuses the session as it does an unsupported protocol version.
 With `PoolConfig::auto_resume` (the default), a shutdown answering a named session's request is not returned: the
 checkout redials, loads what the `ShutdownDump` named into a new session, re-sends the request and adopts the new
 session's ID.

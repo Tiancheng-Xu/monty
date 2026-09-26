@@ -998,8 +998,16 @@ fn to_decode_err(err: impl Display) -> DecodeError {
 
 /// Encodes a [`MontyUuid`] as the wire `Uuid` message (16 raw bytes).
 pub(crate) fn uuid_to_pb(uuid: &MontyUuid) -> pb::Uuid {
-    pb::Uuid {
-        data: uuid.as_bytes().to_vec().into(),
+    pb::Uuid::from(uuid)
+}
+
+/// The wire `Uuid` message: 16 raw bytes. Public so hosts can fill a uuid
+/// field of a request (`VolumeMount.volume_id`) without touching `data`.
+impl From<&MontyUuid> for pb::Uuid {
+    fn from(uuid: &MontyUuid) -> Self {
+        Self {
+            data: uuid.as_bytes().to_vec().into(),
+        }
     }
 }
 

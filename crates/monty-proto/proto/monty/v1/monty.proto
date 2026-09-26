@@ -601,6 +601,10 @@ message Configure {
   // Relay-only: whether a serving relay may store the session. Children ignore
   // it.
   Persistence persistence = 12;
+  // Relay-only: directories a serving relay mounts into the session's sandbox
+  // from its own store and serves itself. Children ignore it; the subprocess
+  // transport refuses a session that names any.
+  repeated VolumeMount volumes = 13;
 }
 
 // How a serving relay treats the session's state; children ignore it.
@@ -611,6 +615,35 @@ enum Persistence {
   PERSISTENCE_EPHEMERAL = 1;
   // Parked on idle, drain or disconnect, and loadable by its session ID.
   PERSISTENCE_STORED = 2;
+}
+
+// One volume mounted into a session by a serving relay. See
+// `Configure.volumes`.
+message VolumeMount {
+  // Absolute, normalized sandbox path the volume appears at.
+  string virtual_path = 1;
+  // The volume's ID, chosen by the host; knowing it is the capability to
+  // mount it.
+  Uuid volume_id = 2;
+  VolumeMode mode = 3;
+  // Mount-relative paths to pull into memory before the session runs; a
+  // trailing `/` names a directory whose every file is pulled.
+  repeated string eager = 4;
+  // A label the relay records with the volume the first time it is mounted
+  // and never rewrites; absent, the record has no name.
+  optional string name = 5;
+}
+
+// What a mount lets the sandbox do to its volume; children ignore it.
+enum VolumeMode {
+  // Read as read-only.
+  VOLUME_MODE_UNSPECIFIED = 0;
+  // Writes raise `PermissionError`.
+  VOLUME_MODE_READ_ONLY = 1;
+  // Writes go to the store as they happen; the last writer wins.
+  VOLUME_MODE_READ_WRITE = 2;
+  // Writes are kept in the relay's memory for the connection, never stored.
+  VOLUME_MODE_OVERLAY = 3;
 }
 
 // Rendering of the typing diagnostics a `TypingError` carries; mirrors ty's

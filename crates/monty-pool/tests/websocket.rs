@@ -18,10 +18,10 @@ use std::{
 use monty_pool::telemetry::{TelemetryAdapter, configure_telemetry_adapter};
 use monty_pool::{
     Checkout, CheckoutOptions, MountSpec, MountSpecMode, Persistence, Pool, PoolConfig, PoolError, PrintFuture,
-    ReplConfig, ResumeValue, TurnEvent,
+    ReplConfig, ResumeValue, TurnEvent, VolumeMode, VolumeMount,
 };
 use monty_proto::{MAX_FRAME_LEN, WireFunctionCall, decode_frame, encode_to_capped_vec, pb, resume_call_from_proto};
-use monty_types::{CallArgs, ExtFunctionResult, MontyObject, PrintStream, ResourceLimits, SourceRange};
+use monty_types::{CallArgs, ExtFunctionResult, MontyObject, MontyUuid, PrintStream, ResourceLimits, SourceRange};
 #[cfg(feature = "telemetry")]
 use opentelemetry::trace::{SpanId, TraceId};
 #[cfg(feature = "telemetry")]
@@ -55,13 +55,25 @@ fn answer_requests(socket: &mut WebSocket<TcpStream>) {
             // Configure / Reset / Shutdown / anything else: acknowledge.
             _ => pb::child_event::Kind::Ok(pb::Ok {}),
         };
-        let event = pb::ChildEvent {
-            kind: Some(kind),
-            ..Default::default()
-        };
-        let body = encode_to_capped_vec(&event).expect("encode event");
-        socket.send(Message::Binary(body.into())).expect("send event");
+        send_event(socket, &event_kind(kind));
     }
+}
+
+/// A mock child that also reports the `Configure` its one connection opens
+/// with — what a serving relay reads its session's mounts from.
+fn serve_capturing_configure(listener: &TcpListener, tx: &mpsc::Sender<pb::Configure>) {
+    let (stream, _peer) = listener.accept().expect("accept");
+    let mut socket = tungstenite::accept(stream).expect("ws handshake");
+    let Ok(Message::Binary(data)) = socket.read() else {
+        panic!("expected the Configure frame");
+    };
+    let request = decode_frame::<pb::ParentRequest>(data.as_ref()).expect("decode request");
+    let Some(pb::parent_request::Kind::Configure(configure)) = request.kind else {
+        panic!("expected a Configure, got {request:?}");
+    };
+    tx.send(configure).expect("send captured configure");
+    send_event(&mut socket, &event_kind(pb::child_event::Kind::Ok(pb::Ok {})));
+    answer_requests(&mut socket);
 }
 
 /// A mock child that also reports each of `headers`' values (in order, `None`
@@ -161,6 +173,52 @@ async fn drives_a_session_over_websocket() {
         "got {event:?}"
     );
 
+    checkout.finish().await.expect("finish");
+    join_server(server).await;
+}
+
+/// `ReplConfig::volumes` ride on the `Configure` a checkout opens with, as
+/// given: path, uuid bytes, mode, eager entries and name.
+#[tokio::test]
+async fn volumes_ride_on_configure() {
+    let (configure_tx, configure_rx) = mpsc::channel();
+    let (listener, mut config) = ws_pool_config();
+    let server = thread::spawn(move || serve_capturing_configure(&listener, &configure_tx));
+
+    config.request_timeout = Some(Duration::from_secs(10));
+    let pool = Pool::new(config).await.expect("pool");
+    let repl = ReplConfig {
+        volumes: vec![
+            VolumeMount::new("/data", MontyUuid::from_u128(1), VolumeMode::ReadOnly).expect("mount"),
+            VolumeMount::new("/out/", MontyUuid::from_u128(2), VolumeMode::ReadWrite)
+                .expect("mount")
+                .with_eager(["config.json", "models/"])
+                .with_name("scratch")
+                .expect("name"),
+        ],
+        ..ReplConfig::default()
+    };
+    let checkout = pool.checkout(&repl).await.expect("checkout");
+    let configure = configure_rx.recv().expect("captured configure");
+    assert_eq!(
+        configure.volumes,
+        vec![
+            pb::VolumeMount {
+                virtual_path: "/data".to_owned(),
+                volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
+                mode: pb::VolumeMode::ReadOnly.into(),
+                eager: vec![].into(),
+                name: None,
+            },
+            pb::VolumeMount {
+                virtual_path: "/out".to_owned(),
+                volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
+                mode: pb::VolumeMode::ReadWrite.into(),
+                eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
+                name: Some("scratch".to_owned()),
+            },
+        ]
+    );
     checkout.finish().await.expect("finish");
     join_server(server).await;
 }

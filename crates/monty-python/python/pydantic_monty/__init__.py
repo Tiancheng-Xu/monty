@@ -37,6 +37,7 @@ from ._monty import (
     MountDir,
     NameLookupSnapshot,
     SourceRange,
+    Volume,
     __version__,
     _install_telemetry,
 )
@@ -98,6 +99,7 @@ __all__ = (
     'MontyRuntimeError',
     'MontyTypingError',
     'MountDir',
+    'Volume',
     # feed_start snapshots
     'MontyComplete',
     'FunctionSnapshot',

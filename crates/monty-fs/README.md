@@ -17,9 +17,11 @@ code at all.
 Confinement is structural rather than a check: each mount holds a
 `cap_std::fs::Dir` opened at mount time, and every operation runs relative to
 that descriptor, so `..`, symlinks, and directories swapped mid-operation
-cannot reach outside it. `path_security.rs` is left with path policy alone —
-null-byte rejection and length limits, with lexical normalization delegated to
-`monty_types::normalize_virtual_path`.
+cannot reach outside it. The `path` module is left with path policy alone —
+null-byte rejection, length limits and the mount-prefix arithmetic, with lexical
+normalization delegated to `monty_types::normalize_virtual_path`. It is public
+so a host that serves a mount itself, such as a relay mounting directories from
+its own store, gives the sandbox the same view of a path.
 
 Each mount has a configurable aggregate memory budget that defaults to 100 MB.
 Retained in-memory overlay data and transient filesystem results share that

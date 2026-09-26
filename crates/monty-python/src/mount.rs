@@ -3,13 +3,24 @@
 //! [`PyMountDir`] stores immutable configuration for one mount point. Each
 //! feed copies that configuration into a fresh parent-side mount table, so
 //! overlay state lasts only for that feed and host paths never reach workers.
+//! [`PyVolume`] describes a directory a serving relay mounts from its own
+//! store; it is plain configuration sent on checkout.
 
-use std::path::PathBuf;
+use std::{fmt::Write as _, path::PathBuf};
 
 use monty_fs::{MountMode, MountRoot};
-use monty_pool::{MountSpec, MountSpecMode};
-use monty_proto::python::exc_monty_to_py;
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyTuple};
+use monty_pool::{MountSpec, MountSpecMode, PoolError, VolumeMode, VolumeMount};
+use monty_proto::python::{exc_monty_to_py, uuid_to_py};
+use monty_types::MontyUuid;
+use pyo3::{
+    exceptions::{PyTypeError, PyValueError},
+    intern,
+    prelude::*,
+    sync::PyOnceLock,
+    types::{PyString, PyTuple},
+};
+
+use crate::pool::pool_err_to_py;
 
 // =============================================================================
 // MountDir — immutable mount configuration
@@ -199,4 +210,132 @@ fn mount_mode_name(mode: MountSpecMode) -> &'static str {
         MountSpecMode::ReadWrite => "read-write",
         MountSpecMode::Overlay => "overlay",
     }
+}
+
+// =============================================================================
+// Volume — a relay-served mount, sent on checkout
+// =============================================================================
+
+/// A volume a serving relay mounts into a session: a directory kept in the
+/// relay's store, identified by a UUID the host chooses, and served to the
+/// sandbox by the relay itself.
+///
+/// Plain data, unlike `MountDir`: nothing is opened here, so there is no
+/// `close()`. The default mode is `'read-only'`, where `MountDir` defaults to
+/// `'overlay'`, because a volume's `'overlay'` writes belong to the connection
+/// rather than a feed.
+#[pyclass(name = "Volume", module = "pydantic_monty", frozen, eq)]
+#[derive(PartialEq, Eq)]
+pub struct PyVolume(VolumeMount);
+
+#[pymethods]
+impl PyVolume {
+    /// Describes a mount of volume `id` at `virtual_path`.
+    ///
+    /// # Raises
+    /// `ValueError` if `id` is not a UUID, `virtual_path` is not absolute,
+    /// `mode` is not one of the three words, or `name` is empty, over 128
+    /// bytes or contains a control character.
+    #[new]
+    #[pyo3(signature = (id, virtual_path, *, mode = "read-only", eager = None, name = None))]
+    fn new(
+        id: &Bound<'_, PyAny>,
+        virtual_path: &str,
+        mode: &str,
+        eager: Option<Vec<String>>,
+        name: Option<&str>,
+    ) -> PyResult<Self> {
+        let py = id.py();
+        let mode = VolumeMode::from_mode_str(mode).map_err(PyValueError::new_err)?;
+        let mount = VolumeMount::new(virtual_path, volume_id_from_py(id)?, mode)
+            .map_err(|err| volume_err_to_py(py, err))?
+            .with_eager(eager.unwrap_or_default());
+        let mount = match name {
+            Some(name) => mount.with_name(name).map_err(|err| volume_err_to_py(py, err))?,
+            None => mount,
+        };
+        Ok(Self(mount))
+    }
+
+    /// The volume's ID.
+    #[getter]
+    fn id(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        uuid_to_py(py, &self.0.volume_id)
+    }
+
+    /// The normalized virtual path the volume appears at.
+    #[getter]
+    fn virtual_path(&self) -> &str {
+        &self.0.virtual_path
+    }
+
+    /// The access mode: `"read-only"`, `"read-write"`, or `"overlay"`.
+    #[getter]
+    fn mode(&self) -> &'static str {
+        self.0.mode.as_str()
+    }
+
+    /// The mount-relative paths pulled into the relay's memory before the session runs.
+    #[getter]
+    fn eager<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        PyTuple::new(py, &self.0.eager)
+    }
+
+    /// The label recorded by the volume's first mount, if any.
+    #[getter]
+    fn name(&self) -> Option<&str> {
+        self.0.name.as_deref()
+    }
+
+    fn __repr__(&self) -> String {
+        let mount = &self.0;
+        let mut repr = format!(
+            "Volume(id='{}', virtual_path='{}', mode='{}'",
+            mount.volume_id,
+            mount.virtual_path,
+            mount.mode.as_str()
+        );
+        if !mount.eager.is_empty() {
+            // `{:?}` of a `Vec<String>` is a valid Python list literal for ASCII names
+            let _ = write!(repr, ", eager={:?}", mount.eager);
+        }
+        if let Some(name) = &mount.name {
+            let _ = write!(repr, ", name='{name}'");
+        }
+        repr.push(')');
+        repr
+    }
+}
+
+impl PyVolume {
+    /// The mount as the pool sends it on `Configure`.
+    pub(crate) fn mount(&self) -> VolumeMount {
+        self.0.clone()
+    }
+}
+
+/// Raises a `VolumeMount` builder's `ValueError` as that Python exception
+/// itself: it is an argument error here, not a session failure.
+fn volume_err_to_py(py: Python<'_>, err: PoolError) -> PyErr {
+    match err {
+        PoolError::Runtime(exc) => exc_monty_to_py(py, exc),
+        other => pool_err_to_py(py, other),
+    }
+}
+
+/// Reads a volume ID given as a `str` (any form `uuid.UUID` accepts) or a
+/// `uuid.UUID`, going through `uuid.UUID` so the error is CPython's own.
+fn volume_id_from_py(id: &Bound<'_, PyAny>) -> PyResult<MontyUuid> {
+    static UUID_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+    let py = id.py();
+    let class = UUID_CLASS.import(py, "uuid", "UUID")?;
+    let uuid = if id.is_instance_of::<PyString>() {
+        class.call1((id,))?
+    } else if id.is_instance(class)? {
+        id.clone()
+    } else {
+        return Err(PyTypeError::new_err("id must be a str or uuid.UUID"));
+    };
+    let bytes: [u8; 16] = uuid.getattr(intern!(py, "bytes"))?.extract()?;
+    Ok(MontyUuid::from_bytes(bytes))
 }

@@ -321,6 +321,8 @@ impl NativePool {
                 os_policy,
                 // only a serving relay stores sessions; its default applies
                 persistence: Persistence::ServerDefault,
+                // the JS client is subprocess-only, and a subprocess has no store
+                volumes: Vec::new(),
             },
             checkout: Arc::new(AsyncMutex::new(None)),
         })

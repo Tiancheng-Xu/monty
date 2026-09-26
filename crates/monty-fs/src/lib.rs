@@ -20,8 +20,9 @@
 //! Enforced by the operating system, not by path arithmetic: each mount holds
 //! a `cap_std::fs::Dir` opened once at mount time, and every operation is
 //! performed relative to that descriptor, which refuses to resolve past its
-//! own root. `path_security` only normalizes the virtual path and strips the
-//! mount prefix — it is path policy, not the boundary.
+//! own root. [`path`] only normalizes the virtual path and strips the mount
+//! prefix — it is path policy, not the boundary, and is public so a host
+//! serving a mount itself applies the same policy.
 //! Each mount has an aggregate memory budget, defaulting to
 //! [`DEFAULT_MEMORY_USAGE_LIMIT`], for retained overlay data and results.
 //!
@@ -44,4 +45,4 @@ mod mount_mode;
 mod mount_table;
 mod overlay;
 mod overlay_state;
-mod path_security;
+pub mod path;

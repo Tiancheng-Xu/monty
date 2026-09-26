@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from types import MappingProxyType, ModuleType
 from typing import Any
+from uuid import UUID
 
 import pytest
 from inline_snapshot import snapshot
@@ -29,7 +30,7 @@ from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request
 
-from pydantic_monty import AsyncMontyWebsocket, MontyRuntimeError, MontyShutdown
+from pydantic_monty import AsyncMontyWebsocket, MontyRuntimeError, MontyShutdown, Volume
 from pydantic_monty._binary import find_monty_binary
 
 _RELAY_SCRIPT = Path(__file__).resolve().parents[3] / 'scripts' / 'websocket_relay.py'
@@ -101,21 +102,37 @@ async def storing_ws_url() -> AsyncIterator[str]:
         yield _load_relay_script().format_ws_url(host, port)
 
 
+@pytest.fixture
+async def capturing_server() -> AsyncIterator[tuple[str, _StoringServer]]:
+    """The `storing_ws_url` fake without its drain, with the server handed back so a
+    test can read the `Configure` each connection opened with."""
+    server = _StoringServer(find_monty_binary(), drain=False)
+    async with serve(server.handle, '127.0.0.1', 0, max_size=None) as ws_server:
+        host, port = ws_server.sockets[0].getsockname()[:2]
+        yield _load_relay_script().format_ws_url(host, port), server
+
+
 _LENGTH_PREFIX = struct.Struct('<I')
 # `ParentRequest.kind` and `ChildEvent.kind` field numbers, from `monty.proto`
-_REQUEST_DUMP, _REQUEST_LOAD = 7, 8
+_REQUEST_CONFIGURE, _REQUEST_DUMP, _REQUEST_LOAD = 1, 7, 8
 _EVENT_PRINT, _EVENT_DUMP_RESULT, _EVENT_SHUTDOWN = 1, 9, 12
 _EVENT_SESSION_ID = 28
+# `Configure.volumes` and the `VolumeMount` fields
+_CONFIGURE_VOLUMES = 13
+_VOLUME_PATH, _VOLUME_ID, _VOLUME_MODE, _VOLUME_EAGER, _VOLUME_NAME = 1, 2, 3, 4, 5
 
 
 class _StoringServer:
     """The fake behind `storing_ws_url`; see the fixture."""
 
-    def __init__(self, monty_bin: str) -> None:
+    def __init__(self, monty_bin: str, drain: bool = True) -> None:
         self.monty_bin = monty_bin
+        self.drain = drain
         self.records: dict[bytes, bytes] = {}
         self.minted = 0
         self.connections = 0
+        # the `Configure` each connection opened with, in connection order
+        self.configures: list[bytes] = []
 
     def _mint(self) -> bytes:
         self.minted += 1
@@ -123,7 +140,7 @@ class _StoringServer:
 
     async def handle(self, websocket: ServerConnection) -> None:
         self.connections += 1
-        drain_at = 3 if self.connections == 1 else None
+        drain_at = 3 if self.connections == 1 and self.drain else None
         child = await asyncio.create_subprocess_exec(
             self.monty_bin, 'subprocess', stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE
         )
@@ -145,6 +162,8 @@ class _StoringServer:
                 assert isinstance(message, bytes)
                 requests += 1
                 fields = _proto_fields(message)
+                if _REQUEST_CONFIGURE in fields:
+                    self.configures.append(fields[_REQUEST_CONFIGURE])
                 if requests == drain_at:
                     # park: dump the idle child, keep its state under the ID,
                     # and tell the client the request did not run
@@ -201,6 +220,41 @@ def _proto_fields(buf: bytes) -> dict[int, Any]:
         else:
             raise ValueError(f'unsupported wire type {wire_type}')
     return fields
+
+
+def _proto_repeated(buf: bytes, field: int) -> list[bytes]:
+    """Every value of one length-delimited repeated `field` of a message, in order."""
+    values: list[bytes] = []
+    i = 0
+    while i < len(buf):
+        key, i = _varint(buf, i)
+        number, wire_type = key >> 3, key & 7
+        if wire_type == 0:
+            _, i = _varint(buf, i)
+        elif wire_type == 2:
+            length, i = _varint(buf, i)
+            if number == field:
+                values.append(buf[i : i + length])
+            i += length
+        elif wire_type == 1:
+            i += 8
+        elif wire_type == 5:
+            i += 4
+        else:
+            raise ValueError(f'unsupported wire type {wire_type}')
+    return values
+
+
+def _decode_volume(buf: bytes) -> dict[str, Any]:
+    """One `VolumeMount` message as a dict, the way a relay reads it."""
+    fields = _proto_fields(buf)
+    return {
+        'virtual_path': fields[_VOLUME_PATH].decode(),
+        'volume_id': UUID(bytes=_proto_fields(fields[_VOLUME_ID])[1]),
+        'mode': fields.get(_VOLUME_MODE, 0),
+        'eager': [entry.decode() for entry in _proto_repeated(buf, _VOLUME_EAGER)],
+        'name': fields[_VOLUME_NAME].decode() if _VOLUME_NAME in fields else None,
+    }
 
 
 def _varint(buf: bytes, i: int) -> tuple[int, int]:
@@ -442,6 +496,115 @@ async def test_checkout_rejects_unknown_limits():
     assert exc_info.value.args[0] == snapshot(
         "unknown limits key 'max_memroy'; accepted keys are 'max_feed_duration_secs', 'max_turn_duration_secs', 'max_memory', 'gc_interval', 'max_recursion_depth', 'max_suspensions', 'max_total_sleep_secs'"
     )
+
+
+def test_volume_is_plain_data():
+    volume = Volume('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', '/data//models/./')
+    assert volume.id == UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13')
+    assert volume.virtual_path == snapshot('/data/models')
+    assert volume.mode == snapshot('read-only')
+    assert volume.eager == snapshot(())
+    assert volume.name is None
+    assert repr(volume) == snapshot(
+        "Volume(id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', virtual_path='/data/models', mode='read-only')"
+    )
+    assert volume == Volume(UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'), '/data/models')
+    assert volume != Volume(UUID(int=2), '/data/models')
+
+    named = Volume(UUID(int=2), '/out', mode='read-write', eager=('config.json', 'models/'), name='scratch')
+    assert named.eager == snapshot(('config.json', 'models/'))
+    assert named.name == snapshot('scratch')
+    assert repr(named) == snapshot(
+        "Volume(id='00000000-0000-0000-0000-000000000002', virtual_path='/out', mode='read-write', eager=[\"config.json\", \"models/\"], name='scratch')"
+    )
+
+
+@pytest.mark.parametrize(
+    ('kwargs', 'message'),
+    [
+        ({'id': 'not-a-uuid', 'virtual_path': '/data'}, 'badly formed hexadecimal UUID string'),
+        ({'id': UUID(int=1), 'virtual_path': 'data'}, "virtual path must be absolute, got: 'data'"),
+        (
+            {'id': UUID(int=1), 'virtual_path': '/data', 'mode': 'rw'},
+            "Invalid mode 'rw', expected 'read-only', 'read-write', or 'overlay'",
+        ),
+        ({'id': UUID(int=1), 'virtual_path': '/data', 'name': ''}, 'volume name must be 1 to 128 bytes, got 0 bytes'),
+        (
+            {'id': UUID(int=1), 'virtual_path': '/data', 'name': 'x' * 129},
+            'volume name must be 1 to 128 bytes, got 129 bytes',
+        ),
+        (
+            {'id': UUID(int=1), 'virtual_path': '/data', 'name': 'a\tb'},
+            'volume name must not contain control characters',
+        ),
+    ],
+)
+def test_volume_rejects_bad_arguments(kwargs: dict[str, Any], message: str):
+    with pytest.raises(ValueError) as exc_info:
+        Volume(**kwargs)
+    assert str(exc_info.value) == message
+
+
+def test_volume_id_type():
+    with pytest.raises(TypeError) as exc_info:
+        Volume(1, '/data')  # pyright: ignore[reportArgumentType]
+    assert str(exc_info.value) == snapshot('id must be a str or uuid.UUID')
+
+
+async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringServer]):
+    """`checkout(volumes=...)` puts the mounts on the `Configure` the session opens
+    with, as given; the child ignores them, so the session still runs."""
+    url, server = capturing_server
+    data = Volume('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', '/data')
+    out = Volume(UUID(int=2), '/out/', mode='read-write', eager=['config.json', 'models/'], name='scratch')
+    async with AsyncMontyWebsocket(url, request_timeout=30.0) as pool:
+        async with pool.checkout(volumes=[data, out]) as session:
+            assert await session.feed_run('1 + 1') == snapshot(2)
+        async with pool.checkout(volumes=data) as session:
+            assert await session.feed_run('2 + 2') == snapshot(4)
+        async with pool.checkout() as session:
+            assert await session.feed_run('3 + 3') == snapshot(6)
+    volumes = [
+        [_decode_volume(mount) for mount in _proto_repeated(configure, _CONFIGURE_VOLUMES)]
+        for configure in server.configures
+    ]
+    assert volumes == snapshot(
+        [
+            [
+                {
+                    'virtual_path': '/data',
+                    'volume_id': UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
+                    'mode': 1,
+                    'eager': [],
+                    'name': None,
+                },
+                {
+                    'virtual_path': '/out',
+                    'volume_id': UUID('00000000-0000-0000-0000-000000000002'),
+                    'mode': 2,
+                    'eager': ['config.json', 'models/'],
+                    'name': 'scratch',
+                },
+            ],
+            [
+                {
+                    'virtual_path': '/data',
+                    'volume_id': UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
+                    'mode': 1,
+                    'eager': [],
+                    'name': None,
+                }
+            ],
+            [],
+        ]
+    )
+
+
+async def test_checkout_rejects_non_volumes(ws_url: str):
+    async with AsyncMontyWebsocket(ws_url, request_timeout=30.0) as pool:
+        with pytest.raises(TypeError) as exc_info:
+            pool.checkout(volumes=['/data'])  # pyright: ignore[reportArgumentType]
+        assert str(exc_info.value) == snapshot('volumes must be a Volume, a sequence of Volume, or None')
 
 
 async def test_plain_relay_names_no_session(ws_url: str):

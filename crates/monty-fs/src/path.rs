@@ -1,10 +1,14 @@
-//! Virtual path handling for filesystem mounts.
+//! Virtual path policy for filesystem mounts.
 //!
 //! Maps sandbox virtual paths onto mount-relative paths. This is **not** the
 //! sandbox boundary — that is the mount's `Dir` descriptor (see
 //! [`MountContext::mount_dir`]). What remains here is Monty path policy:
 //! normalization, null-byte rejection, and length limits applied uniformly
 //! across hosts.
+//!
+//! The limits and predicates are public so a host that serves a mount itself
+//! (a relay mounting directories from its own store) gives the sandbox the
+//! same view of a path as a [`MountTable`](super::MountTable) does.
 //!
 //! [`MountContext::mount_dir`]: super::common::MountContext::mount_dir
 
@@ -15,10 +19,10 @@ use monty_types::normalize_virtual_path;
 use super::error::MountError;
 
 /// Maximum total path length in bytes (Linux `PATH_MAX`).
-const PATH_MAX: usize = 4096;
+pub const PATH_MAX: usize = 4096;
 
 /// Maximum single path component length in bytes (universal `NAME_MAX`).
-const NAME_MAX: usize = 255;
+pub const NAME_MAX: usize = 255;
 
 /// Maximum number of components in a path.
 ///
@@ -30,7 +34,7 @@ const NAME_MAX: usize = 255;
 /// at least one step per level, that let a single call fan out into millions
 /// of lookups. 64 is far above real trees (the deepest path in this repo,
 /// nested `node_modules` included, is 20) and caps the fan-out at ~4k.
-const DEPTH_MAX: usize = 64;
+pub const DEPTH_MAX: usize = 64;
 
 /// A virtual path checked against Monty's path policy and made relative to its
 /// mount, ready to hand to a [`Dir`](cap_std::fs::Dir) method.
@@ -38,7 +42,7 @@ const DEPTH_MAX: usize = 64;
 /// `relative` is empty for the mount root itself; `cap-std` treats `""` as an
 /// error, so callers wanting the root use `"."` via [`Self::for_dir_op`].
 #[derive(Debug)]
-pub(super) struct MountRelativePath {
+pub(crate) struct MountRelativePath {
     /// Path relative to the mount root, with no `.` or `..` components.
     relative: String,
 }
@@ -61,7 +65,7 @@ impl MountRelativePath {
 /// within the *virtual* namespace so `..` cannot climb out of the sandbox's own
 /// view. Escaping the mount on the host side is not this function's job: the
 /// `Dir` descriptor makes it impossible.
-pub(super) fn resolve_virtual_path(
+pub(crate) fn resolve_virtual_path(
     virtual_path: &str,
     mount_virtual_path: &str,
 ) -> Result<MountRelativePath, MountError> {
@@ -76,9 +80,10 @@ pub(super) fn resolve_virtual_path(
     Ok(MountRelativePath { relative })
 }
 
-/// Strips a normalized mount prefix from a normalized sandbox path.
+/// Strips a normalized mount prefix from a normalized sandbox path; `None`
+/// when the path is not under the mount. The mount root itself strips to `""`.
 #[must_use]
-pub(super) fn strip_mount_prefix<'a>(normalized_path: &'a str, mount_virtual_path: &str) -> Option<&'a str> {
+pub fn strip_mount_prefix<'a>(normalized_path: &'a str, mount_virtual_path: &str) -> Option<&'a str> {
     if mount_virtual_path == "/" {
         return Some(normalized_path.strip_prefix('/').unwrap_or(normalized_path));
     }
@@ -92,6 +97,19 @@ pub(super) fn strip_mount_prefix<'a>(normalized_path: &'a str, mount_virtual_pat
         .and_then(|rest| rest.strip_prefix('/'))
 }
 
+/// Whether `normalized_path` falls under `mount_virtual_path`: the mount root
+/// itself or a path below it, never a sibling sharing a prefix (`/a/bc` is not
+/// under `/a/b`).
+#[must_use]
+pub fn path_matches_mount(normalized_path: &str, mount_virtual_path: &str) -> bool {
+    if mount_virtual_path == "/" || normalized_path == mount_virtual_path {
+        true
+    } else {
+        normalized_path.starts_with(mount_virtual_path)
+            && normalized_path.as_bytes().get(mount_virtual_path.len()) == Some(&b'/')
+    }
+}
+
 /// Rejects segments a host parser treats as drive/UNC/root-absolute (`C:\x`,
 /// `C:`, `\\host\share`).
 ///
@@ -99,7 +117,7 @@ pub(super) fn strip_mount_prefix<'a>(normalized_path: &'a str, mount_virtual_pat
 /// reads them as ordinary filenames. Rejecting everywhere keeps hosts identical.
 /// `OverlayMemory` needs it independently — its keys never reach the filesystem,
 /// so the descriptor never sees them (#655).
-pub(super) fn reject_drive_or_unc_segments(relative: &str, normalized_virtual_path: &str) -> Result<(), MountError> {
+pub fn reject_drive_or_unc_segments(relative: &str, normalized_virtual_path: &str) -> Result<(), MountError> {
     // A backslash can only smuggle a Windows separator/UNC/root prefix; `X:` a drive.
     let has_escape_prefix = relative.contains('\\') || relative.split('/').any(is_windows_drive_prefix);
     if has_escape_prefix {
@@ -122,7 +140,8 @@ fn is_windows_drive_prefix(segment: &str) -> bool {
 /// The mount table checks this per call so it can raise CPython's wording for
 /// the operation; the helpers below re-check it as defence in depth, since a
 /// path that never reaches a syscall has nothing else to refuse it.
-pub(super) fn contains_null_byte(virtual_path: &str) -> bool {
+#[must_use]
+pub fn contains_null_byte(virtual_path: &str) -> bool {
     virtual_path.contains('\0')
 }
 
@@ -133,7 +152,7 @@ pub(super) fn contains_null_byte(virtual_path: &str) -> bool {
 /// wording, matching what CPython's `open()` layer says.
 ///
 /// [`MountTable::handle_os_call`]: super::MountTable::handle_os_call
-pub(super) fn reject_null_bytes(virtual_path: &str) -> Result<(), MountError> {
+pub(crate) fn reject_null_bytes(virtual_path: &str) -> Result<(), MountError> {
     if contains_null_byte(virtual_path) {
         Err(MountError::EmbeddedNullByte("embedded null byte"))
     } else {
@@ -154,7 +173,7 @@ pub(super) fn reject_null_bytes(virtual_path: &str) -> Result<(), MountError> {
 /// The component count is measured the same way, which only ever over-counts:
 /// normalization drops `.` and empty segments and `..` removes a pair, so a
 /// path within the limit as sent is within it once collapsed too.
-pub(super) fn reject_overlong_path(path: &str) -> Result<(), MountError> {
+pub fn reject_overlong_path(path: &str) -> Result<(), MountError> {
     let mut components = path.split('/');
     // `ENAMETOOLONG` for depth as well: it is the error a kernel that saw the
     // whole path would raise, and the one every predicate already swallows.

@@ -646,6 +646,36 @@ fn os_policy_round_trip() {
     );
 }
 
+/// Relay-only fields ride on `Configure` untouched: two mounts, one with eager
+/// entries and a name, decode as sent, uuid bytes included.
+#[test]
+fn configure_volumes_round_trip() {
+    let volumes = vec![
+        pb::VolumeMount {
+            virtual_path: "/data".to_owned(),
+            volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
+            mode: pb::VolumeMode::ReadOnly.into(),
+            eager: vec![].into(),
+            name: None,
+        },
+        pb::VolumeMount {
+            virtual_path: "/out".to_owned(),
+            volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
+            mode: pb::VolumeMode::ReadWrite.into(),
+            eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
+            name: Some("scratch".to_owned()),
+        },
+    ];
+    let configure = pb::Configure {
+        volumes: volumes.clone().into(),
+        ..pb::Configure::default()
+    };
+    let back = decode_frame::<pb::Configure>(configure.encode_to_vec().as_slice()).expect("configure decodes");
+    assert_eq!(back.volumes, volumes);
+    let id = back.volumes[1].volume_id.as_ref().expect("volume id");
+    assert_eq!(MontyUuid::try_from_slice(&id.data), Some(MontyUuid::from_u128(2)));
+}
+
 #[test]
 fn empty_os_policy_is_the_default() {
     let back = OsPolicy::try_from(pb::OsPolicy::default()).unwrap();

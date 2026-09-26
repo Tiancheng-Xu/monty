@@ -25,8 +25,8 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 #[cfg(unix)]
 use insta::assert_snapshot;
 use monty_pool::{
-    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent,
-    on_print_sync,
+    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent, VolumeMode,
+    VolumeMount, on_print_sync,
 };
 // only the unix-gated raw-path test forges worker frames
 #[cfg(unix)]
@@ -34,7 +34,7 @@ use monty_proto::{encode_framed_into, pb};
 #[cfg(unix)]
 use monty_types::SourceRange;
 use monty_types::{
-    CallArgs, DateTimeSource, ExcType, MontyException, MontyObject, NameLookupResult, OsPolicy, PrintStream,
+    CallArgs, DateTimeSource, ExcType, MontyException, MontyObject, MontyUuid, NameLookupResult, OsPolicy, PrintStream,
     RandomSeed, RandomStart, ResourceLimits, SleepMode, TypeCheckingConfig, TypeCheckingFormat,
     unstable::{self, MontyNode},
 };
@@ -152,6 +152,73 @@ fn write_fake_monty(dir: &Path, script: &str) -> PathBuf {
 // =============================================================================
 // Happy path
 // =============================================================================
+
+/// A subprocess worker has no store: a `ReplConfig` naming a volume is refused
+/// before anything is spawned, and the pool stays usable.
+#[tokio::test]
+async fn volumes_are_refused_on_the_subprocess_transport() {
+    let pool = Pool::new(config()).await.unwrap();
+    let repl = ReplConfig {
+        volumes: vec![VolumeMount::new("/data", MontyUuid::from_u128(7), VolumeMode::default()).unwrap()],
+        ..ReplConfig::default()
+    };
+    let Err(err) = pool.checkout(&repl).await else {
+        panic!("expected the checkout to be refused");
+    };
+    assert_eq!(
+        err.to_string(),
+        "failed to spawn monty worker: volumes need a serving relay"
+    );
+    let mut session = pool.checkout(&ReplConfig::default()).await.unwrap();
+    let event = session
+        .feed("1 + 1", vec![], vec![], false, &mut no_print)
+        .await
+        .unwrap();
+    assert_eq!(expect_complete(event), MontyObject::int(2));
+    session.finish().await.unwrap();
+}
+
+/// `VolumeMount` validates what the client can check itself: the virtual path
+/// is made absolute and normalized, and a name is 1 to 128 bytes of printable text.
+#[test]
+fn volume_mount_validates_its_arguments() {
+    let mount = VolumeMount::new("/data//models/./", MontyUuid::from_u128(1), VolumeMode::Overlay).unwrap();
+    assert_eq!(mount.virtual_path, "/data/models");
+    assert_eq!(mount.mode, VolumeMode::Overlay);
+    assert!(mount.eager.is_empty() && mount.name.is_none(), "{mount:?}");
+    let named = mount
+        .clone()
+        .with_eager(["config.json", "models/"])
+        .with_name("scratch")
+        .unwrap();
+    assert_eq!(named.eager, vec!["config.json".to_owned(), "models/".to_owned()]);
+    assert_eq!(named.name.as_deref(), Some("scratch"));
+    let value_error = |result: Result<VolumeMount, PoolError>| match result {
+        Err(PoolError::Runtime(exc)) => exc.to_string(),
+        other => panic!("expected a ValueError, got {other:?}"),
+    };
+    assert_eq!(
+        value_error(VolumeMount::new("data", MontyUuid::from_u128(1), VolumeMode::default())),
+        "ValueError: virtual path must be absolute, got: 'data'"
+    );
+    assert_eq!(
+        value_error(mount.clone().with_name("")),
+        "ValueError: volume name must be 1 to 128 bytes, got 0 bytes"
+    );
+    assert_eq!(
+        value_error(mount.clone().with_name("x".repeat(129))),
+        "ValueError: volume name must be 1 to 128 bytes, got 129 bytes"
+    );
+    assert_eq!(
+        value_error(mount.with_name("tab\there")),
+        "ValueError: volume name must not contain control characters"
+    );
+    assert_eq!(VolumeMode::from_mode_str("read-write"), Ok(VolumeMode::ReadWrite));
+    assert_eq!(
+        VolumeMode::from_mode_str("rw"),
+        Err("Invalid mode 'rw', expected 'read-only', 'read-write', or 'overlay'".to_owned())
+    );
+}
 
 /// Rejected eager answers leave the checkout and worker at the same call.
 #[tokio::test]
