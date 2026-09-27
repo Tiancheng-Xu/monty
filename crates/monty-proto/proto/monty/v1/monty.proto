@@ -639,7 +639,7 @@ message RemoteVolume {
 
 // What the sandbox may do to a mounted volume.
 enum MountMode {
-  // Read as read-only.
+  // Read as overlay.
   MOUNT_MODE_UNSPECIFIED = 0;
   // Writes raise `PermissionError`.
   MOUNT_MODE_READ_ONLY = 1;

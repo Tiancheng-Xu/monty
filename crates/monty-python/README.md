@@ -38,7 +38,7 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
-`RemoteVolume` asks the server to mount a remote volume within the sandbox, read-only by default:
+`RemoteVolume` asks the server to mount a remote volume within the sandbox:
 
 ```python test="skip"
 from uuid import UUID

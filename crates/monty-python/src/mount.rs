@@ -221,7 +221,7 @@ fn mount_mode_name(mode: MountSpecMode) -> &'static str {
 /// A remote volume a client can ask a server to mount within the sandbox.
 ///
 /// Plain data, unlike `MountDir`: nothing is opened here, so there is no
-/// `close()`. The default mode is `'read-only'`, not `MountDir`'s `'overlay'`.
+/// `close()`.
 #[pyclass(name = "RemoteVolume", module = "pydantic_monty", frozen, eq)]
 #[derive(PartialEq, Eq)]
 pub struct PyRemoteVolume(RemoteVolume);
@@ -240,7 +240,7 @@ impl PyRemoteVolume {
         virtual_path,
         *,
         id = None,
-        mode = "read-only",
+        mode = "overlay",
         eager = None,
         name = None,
         size_limit = None,

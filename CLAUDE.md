@@ -1020,7 +1020,7 @@ where they are. Change one and you must change all of them:
     `_monty.pyi` and `crates/monty-js/ts/pool.ts`.
 - **Mount modes and their defaults** — `limitations/filesystem.md`, `docs/filesystem.md`,
     the `MountDir` docstrings in `_monty.pyi` and `crates/monty-js/ts/mount.ts`. A `RemoteVolume` (`docs/filesystem.md`
-    "Remote Volumes", its docstring in `_monty.pyi`) uses the same three words but defaults to `read-only`.
+    "Remote Volumes", its docstring in `_monty.pyi`) uses the same three words and the same default.
 
 ### Reviewer Notes
 

@@ -1470,7 +1470,7 @@ impl Persistence {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum MountMode {
-    /// Read as read-only.
+    /// Read as overlay.
     Unspecified = 0,
     /// Writes raise `PermissionError`.
     ReadOnly = 1,

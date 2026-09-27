@@ -506,11 +506,11 @@ def test_volume_is_plain_data():
     volume = RemoteVolume('/data//models/./', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
     assert volume.id == UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13')
     assert volume.virtual_path == snapshot('/data/models')
-    assert volume.mode == snapshot('read-only')
+    assert volume.mode == snapshot('overlay')
     assert volume.eager == snapshot(())
     assert volume.name is None
     assert repr(volume) == snapshot(
-        "RemoteVolume(virtual_path='/data/models', id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', mode='read-only')"
+        "RemoteVolume(virtual_path='/data/models', id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', mode='overlay')"
     )
     assert volume == RemoteVolume('/data/models', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
     assert volume != RemoteVolume('/data/models', id=UUID(int=2))
@@ -561,7 +561,7 @@ def test_volume_limits():
     assert limited.write_operations_limit == snapshot(100)
     assert limited.read_operations_limit == snapshot(1000)
     assert repr(limited) == snapshot(
-        "RemoteVolume(virtual_path='/data', id='00000000-0000-0000-0000-000000000001', mode='read-only', size_limit=1000000, write_operations_limit=100, read_operations_limit=1000)"
+        "RemoteVolume(virtual_path='/data', id='00000000-0000-0000-0000-000000000001', mode='overlay', size_limit=1000000, write_operations_limit=100, read_operations_limit=1000)"
     )
     assert limited != unlimited
 
@@ -616,7 +616,7 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
                 {
                     'virtual_path': '/data',
                     'volume_id': UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
-                    'mode': 1,
+                    'mode': 3,
                     'eager': [],
                     'name': None,
                     'size_limit': None,
@@ -638,7 +638,7 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
                 {
                     'virtual_path': '/data',
                     'volume_id': UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
-                    'mode': 1,
+                    'mode': 3,
                     'eager': [],
                     'name': None,
                     'size_limit': None,

@@ -1521,7 +1521,7 @@ impl Persistence {
 #[prost(prost_path = "crate::budgeted_prost")]
 #[repr(i32)]
 pub enum MountMode {
-    /// Read as read-only.
+    /// Read as overlay.
     Unspecified = 0,
     /// Writes raise `PermissionError`.
     ReadOnly = 1,

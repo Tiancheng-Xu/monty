@@ -240,13 +240,13 @@ none.
 
     The TypeScript package is subprocess-only and cannot dial a server, so it has no volumes.
 
-The modes are the three words of a [mount](#modes), with a different default:
+The modes and their default are those of a [mount](#modes):
 
-| Mode                    | Writes                                     |
-| ----------------------- | ------------------------------------------ |
-| `'read-only'` (default) | raise `PermissionError`                    |
-| `'read-write'`          | persisted to the volume                    |
-| `'overlay'`             | visible to the session but never persisted |
+| Mode                  | Writes                                     |
+| --------------------- | ------------------------------------------ |
+| `'read-only'`         | raise `PermissionError`                    |
+| `'read-write'`        | persisted to the volume                    |
+| `'overlay'` (default) | visible to the session but never persisted |
 
 Three optional limits bound what a session can do to a volume; each takes the server's default when not given:
 
