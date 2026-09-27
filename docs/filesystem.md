@@ -204,7 +204,7 @@ Relative symlinks that stay inside the mount are followed in the non-overlay mod
 The full list is in [`limitations/filesystem.md`](limitations/filesystem.md)
 and [`limitations/open.md`](limitations/open.md).
 
-## Volumes
+## Remote Volumes
 
 A [`RemoteVolume`][pydantic_monty.RemoteVolume] is a remote volume a client can ask a server to mount within the sandbox.
 It is identified by a UUID, generated when `id` is not given, and passed to

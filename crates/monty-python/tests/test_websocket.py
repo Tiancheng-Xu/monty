@@ -611,7 +611,9 @@ async def test_checkout_rejects_non_volumes(ws_url: str):
     async with AsyncMontyWebsocket(ws_url, request_timeout=30.0) as pool:
         with pytest.raises(TypeError) as exc_info:
             pool.checkout(volumes=['/data'])  # pyright: ignore[reportArgumentType]
-        assert str(exc_info.value) == snapshot('volumes must be a RemoteVolume, a sequence of RemoteVolume, or None')
+        assert str(exc_info.value) == snapshot(
+            'volumes must be a `RemoteVolume`, or sequence of `RemoteVolume`s, or `None`.'
+        )
 
 
 async def test_plain_relay_names_no_session(ws_url: str):

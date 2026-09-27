@@ -60,7 +60,7 @@ The redial uses the headers `connect_headers` returned when the session was ente
 resume fail.
 `MontyDisconnectError` is never resumed, because the request may have run.
 
-`checkout(volumes=...)` asks the server to mount remote [volumes](../../filesystem.md#volumes) within the sandbox,
+`checkout(volumes=...)` asks the server to mount [remote volumes](../../filesystem.md#remote-volumes) within the sandbox,
 each a [`RemoteVolume`][pydantic_monty.RemoteVolume].
 
 ## Dependencies

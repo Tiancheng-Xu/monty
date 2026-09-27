@@ -2154,7 +2154,8 @@ fn extract_volumes(volumes: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<RemoteVol
     if let Ok(single) = volumes.extract::<PyRef<'_, PyRemoteVolume>>() {
         return Ok(vec![single.mount()]);
     }
-    let type_error = || PyTypeError::new_err("volumes must be a RemoteVolume, a sequence of RemoteVolume, or None");
+    let type_error =
+        || PyTypeError::new_err("volumes must be a `RemoteVolume`, or sequence of `RemoteVolume`s, or `None`.");
     volumes
         .try_iter()
         .map_err(|_| type_error())?
