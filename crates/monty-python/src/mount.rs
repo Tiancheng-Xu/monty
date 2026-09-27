@@ -236,7 +236,18 @@ impl PyRemoteVolume {
     /// is not absolute, `mode` is not one of the three words, or `name` is
     /// empty, over 128 bytes or contains a control character.
     #[new]
-    #[pyo3(signature = (virtual_path, *, id = None, mode = "read-only", eager = None, name = None))]
+    #[pyo3(signature = (
+        virtual_path,
+        *,
+        id = None,
+        mode = "read-only",
+        eager = None,
+        name = None,
+        size_limit = None,
+        write_operations_limit = None,
+        read_operations_limit = None,
+    ))]
+    #[expect(clippy::too_many_arguments, reason = "one parameter per constructor argument")]
     fn new(
         py: Python<'_>,
         virtual_path: &str,
@@ -244,15 +255,20 @@ impl PyRemoteVolume {
         mode: &str,
         eager: Option<Vec<String>>,
         name: Option<&str>,
+        size_limit: Option<u64>,
+        write_operations_limit: Option<u64>,
+        read_operations_limit: Option<u64>,
     ) -> PyResult<Self> {
         let mode = parse_mount_mode(mode)?;
-        let mount = RemoteVolume::new(virtual_path, volume_id_from_py(py, id)?, mode)
+        let mut mount = RemoteVolume::new(virtual_path, volume_id_from_py(py, id)?, mode)
             .map_err(|err| volume_err_to_py(py, err))?
             .with_eager(eager.unwrap_or_default());
-        let mount = match name {
-            Some(name) => mount.with_name(name).map_err(|err| volume_err_to_py(py, err))?,
-            None => mount,
-        };
+        if let Some(name) = name {
+            mount = mount.with_name(name).map_err(|err| volume_err_to_py(py, err))?;
+        }
+        mount.size_limit = size_limit;
+        mount.write_operations_limit = write_operations_limit;
+        mount.read_operations_limit = read_operations_limit;
         Ok(Self(mount))
     }
 
@@ -286,6 +302,24 @@ impl PyRemoteVolume {
         self.0.name.as_deref()
     }
 
+    /// The most bytes the volume may hold, or `None` for the server's default.
+    #[getter]
+    fn size_limit(&self) -> Option<u64> {
+        self.0.size_limit
+    }
+
+    /// The most write operations the session may make, or `None` for the server's default.
+    #[getter]
+    fn write_operations_limit(&self) -> Option<u64> {
+        self.0.write_operations_limit
+    }
+
+    /// The most read operations the session may make, or `None` for the server's default.
+    #[getter]
+    fn read_operations_limit(&self) -> Option<u64> {
+        self.0.read_operations_limit
+    }
+
     fn __repr__(&self) -> String {
         let mount = &self.0;
         let mut repr = format!(
@@ -300,6 +334,16 @@ impl PyRemoteVolume {
         }
         if let Some(name) = &mount.name {
             let _ = write!(repr, ", name='{name}'");
+        }
+        let limits = [
+            ("size_limit", mount.size_limit),
+            ("write_operations_limit", mount.write_operations_limit),
+            ("read_operations_limit", mount.read_operations_limit),
+        ];
+        for (label, limit) in limits {
+            if let Some(limit) = limit {
+                let _ = write!(repr, ", {label}={limit}");
+            }
         }
         repr.push(')');
         repr

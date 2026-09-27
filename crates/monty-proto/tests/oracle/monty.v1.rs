@@ -807,6 +807,16 @@ pub struct RemoteVolume {
     /// Optional label for the volume: 1 to 128 bytes, no control characters.
     #[prost(string, optional, tag = "5")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
+    /// Limits on the volume; absent takes the server's default.
+    /// Most bytes the volume may hold.
+    #[prost(uint64, optional, tag = "6")]
+    pub size_limit: ::core::option::Option<u64>,
+    /// Most write operations the session may make on the volume.
+    #[prost(uint64, optional, tag = "7")]
+    pub write_operations_limit: ::core::option::Option<u64>,
+    /// Most read operations the session may make on the volume.
+    #[prost(uint64, optional, tag = "8")]
+    pub read_operations_limit: ::core::option::Option<u64>,
 }
 /// Executes one snippet against the session. Turn ends with `Complete`,
 /// `Error`, `TypingError`, or a suspension event.

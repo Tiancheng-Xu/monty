@@ -248,6 +248,14 @@ The modes are the three words of a [mount](#modes), with a different default:
 | `'read-write'`          | persisted to the volume                    |
 | `'overlay'`             | visible to the session but never persisted |
 
+Three optional limits bound what a session can do to a volume; each takes the server's default when not given:
+
+| Argument                 | Limits                                              |
+| ------------------------ | --------------------------------------------------- |
+| `size_limit`             | bytes the volume may hold                           |
+| `write_operations_limit` | write operations the session may make on the volume |
+| `read_operations_limit`  | read operations the session may make on the volume  |
+
 `eager` lists mount-relative paths to load before the session runs, with a trailing `/` naming a directory, and `name`
 is an optional label for the volume.
 

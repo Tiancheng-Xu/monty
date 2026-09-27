@@ -676,6 +676,9 @@ fn configure_volumes_round_trip() {
             mode: pb::MountMode::ReadOnly.into(),
             eager: vec![].into(),
             name: None,
+            size_limit: None,
+            write_operations_limit: None,
+            read_operations_limit: None,
         },
         pb::RemoteVolume {
             virtual_path: "/out".to_owned(),
@@ -683,6 +686,9 @@ fn configure_volumes_round_trip() {
             mode: pb::MountMode::ReadWrite.into(),
             eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
             name: Some("scratch".to_owned()),
+            size_limit: Some(1_000_000),
+            write_operations_limit: Some(100),
+            read_operations_limit: Some(1_000),
         },
     ];
     let configure = pb::Configure {

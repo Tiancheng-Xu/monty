@@ -628,6 +628,13 @@ message RemoteVolume {
   repeated string eager = 4;
   // Optional label for the volume: 1 to 128 bytes, no control characters.
   optional string name = 5;
+  // Limits on the volume; absent takes the server's default.
+  // Most bytes the volume may hold.
+  optional uint64 size_limit = 6;
+  // Most write operations the session may make on the volume.
+  optional uint64 write_operations_limit = 7;
+  // Most read operations the session may make on the volume.
+  optional uint64 read_operations_limit = 8;
 }
 
 // What the sandbox may do to a mounted volume.

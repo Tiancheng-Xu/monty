@@ -217,6 +217,8 @@ class RemoteVolume:
     - `'read-write'` — writes are persisted to the volume.
     - `'overlay'` — writes are visible to the session but never persisted.
 
+    The three limits take the server's default when `None`.
+
     ```python
     from uuid import UUID
 
@@ -234,6 +236,9 @@ class RemoteVolume:
     mode: Literal['read-only', 'read-write', 'overlay']
     eager: tuple[str, ...]
     name: str | None
+    size_limit: int | None
+    write_operations_limit: int | None
+    read_operations_limit: int | None
 
     def __new__(
         cls,
@@ -243,6 +248,9 @@ class RemoteVolume:
         mode: Literal['read-only', 'read-write', 'overlay'] = 'read-only',
         eager: Sequence[str] | None = None,
         name: str | None = None,
+        size_limit: int | None = None,
+        write_operations_limit: int | None = None,
+        read_operations_limit: int | None = None,
     ) -> RemoteVolume:
         """Describe a mount of a volume at `virtual_path`.
 
@@ -257,6 +265,11 @@ class RemoteVolume:
                 trailing `/` names a directory.
             name: Optional label of 1 to 128 bytes without control characters.
                 Raises `ValueError` otherwise.
+            size_limit: Most bytes the volume may hold.
+            write_operations_limit: Most write operations the session may make
+                on the volume.
+            read_operations_limit: Most read operations the session may make on
+                the volume.
         """
 
 class MontyError(Exception):

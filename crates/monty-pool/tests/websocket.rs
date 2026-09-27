@@ -193,7 +193,10 @@ async fn volumes_ride_on_configure() {
                 .expect("mount")
                 .with_eager(["config.json", "models/"])
                 .with_name("scratch")
-                .expect("name"),
+                .expect("name")
+                .with_size_limit(1_000_000)
+                .with_write_operations_limit(100)
+                .with_read_operations_limit(1_000),
         ],
         ..ReplConfig::default()
     };
@@ -208,6 +211,9 @@ async fn volumes_ride_on_configure() {
                 mode: pb::MountMode::ReadOnly.into(),
                 eager: vec![].into(),
                 name: None,
+                size_limit: None,
+                write_operations_limit: None,
+                read_operations_limit: None,
             },
             pb::RemoteVolume {
                 virtual_path: "/out".to_owned(),
@@ -215,6 +221,9 @@ async fn volumes_ride_on_configure() {
                 mode: pb::MountMode::ReadWrite.into(),
                 eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
                 name: Some("scratch".to_owned()),
+                size_limit: Some(1_000_000),
+                write_operations_limit: Some(100),
+                read_operations_limit: Some(1_000),
             },
         ]
     );

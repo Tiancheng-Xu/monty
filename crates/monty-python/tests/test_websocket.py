@@ -120,6 +120,7 @@ _EVENT_SESSION_ID = 28
 # `Configure.volumes` and the `RemoteVolume` fields
 _CONFIGURE_VOLUMES = 13
 _VOLUME_PATH, _VOLUME_ID, _VOLUME_MODE, _VOLUME_EAGER, _VOLUME_NAME = 1, 2, 3, 4, 5
+_VOLUME_SIZE_LIMIT, _VOLUME_WRITE_OPS_LIMIT, _VOLUME_READ_OPS_LIMIT = 6, 7, 8
 
 
 class _StoringServer:
@@ -254,6 +255,9 @@ def _decode_volume(buf: bytes) -> dict[str, Any]:
         'mode': fields.get(_VOLUME_MODE, 0),
         'eager': [entry.decode() for entry in _proto_repeated(buf, _VOLUME_EAGER)],
         'name': fields[_VOLUME_NAME].decode() if _VOLUME_NAME in fields else None,
+        'size_limit': fields.get(_VOLUME_SIZE_LIMIT),
+        'write_operations_limit': fields.get(_VOLUME_WRITE_OPS_LIMIT),
+        'read_operations_limit': fields.get(_VOLUME_READ_OPS_LIMIT),
     }
 
 
@@ -544,6 +548,28 @@ def test_volume_rejects_bad_arguments(kwargs: dict[str, Any], message: str):
     assert str(exc_info.value) == message
 
 
+def test_volume_limits():
+    unlimited = RemoteVolume('/data', id=UUID(int=1))
+    assert unlimited.size_limit is None
+    assert unlimited.write_operations_limit is None
+    assert unlimited.read_operations_limit is None
+
+    limited = RemoteVolume(
+        '/data', id=UUID(int=1), size_limit=1_000_000, write_operations_limit=100, read_operations_limit=1_000
+    )
+    assert limited.size_limit == snapshot(1000000)
+    assert limited.write_operations_limit == snapshot(100)
+    assert limited.read_operations_limit == snapshot(1000)
+    assert repr(limited) == snapshot(
+        "RemoteVolume(virtual_path='/data', id='00000000-0000-0000-0000-000000000001', mode='read-only', size_limit=1000000, write_operations_limit=100, read_operations_limit=1000)"
+    )
+    assert limited != unlimited
+
+    with pytest.raises(OverflowError) as exc_info:
+        RemoteVolume('/data', size_limit=-1)
+    assert str(exc_info.value) == snapshot("can't convert negative int to unsigned")
+
+
 def test_volume_generates_an_id():
     first, second = RemoteVolume('/data'), RemoteVolume('/data')
     assert isinstance(first.id, UUID)
@@ -563,7 +589,16 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
     with, as given; the child ignores them, so the session still runs."""
     url, server = capturing_server
     data = RemoteVolume('/data', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
-    out = RemoteVolume('/out/', id=UUID(int=2), mode='read-write', eager=['config.json', 'models/'], name='scratch')
+    out = RemoteVolume(
+        '/out/',
+        id=UUID(int=2),
+        mode='read-write',
+        eager=['config.json', 'models/'],
+        name='scratch',
+        size_limit=1_000_000,
+        write_operations_limit=100,
+        read_operations_limit=1_000,
+    )
     async with AsyncMontyWebsocket(url, request_timeout=30.0) as pool:
         async with pool.checkout(volumes=[data, out]) as session:
             assert await session.feed_run('1 + 1') == snapshot(2)
@@ -584,6 +619,9 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
                     'mode': 1,
                     'eager': [],
                     'name': None,
+                    'size_limit': None,
+                    'write_operations_limit': None,
+                    'read_operations_limit': None,
                 },
                 {
                     'virtual_path': '/out',
@@ -591,6 +629,9 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
                     'mode': 2,
                     'eager': ['config.json', 'models/'],
                     'name': 'scratch',
+                    'size_limit': 1000000,
+                    'write_operations_limit': 100,
+                    'read_operations_limit': 1000,
                 },
             ],
             [
@@ -600,6 +641,9 @@ async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringSe
                     'mode': 1,
                     'eager': [],
                     'name': None,
+                    'size_limit': None,
+                    'write_operations_limit': None,
+                    'read_operations_limit': None,
                 }
             ],
             [],

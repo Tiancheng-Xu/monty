@@ -24,10 +24,19 @@ pub struct RemoteVolume {
     pub eager: Vec<String>,
     /// Optional label for the volume.
     pub name: Option<String>,
+    /// Most bytes the volume may hold; `None` takes the server's default.
+    pub size_limit: Option<u64>,
+    /// Most write operations the session may make on the volume; `None`
+    /// takes the server's default.
+    pub write_operations_limit: Option<u64>,
+    /// Most read operations the session may make on the volume; `None`
+    /// takes the server's default.
+    pub read_operations_limit: Option<u64>,
 }
 
 impl RemoteVolume {
-    /// A mount of `volume_id` at `virtual_path` with no eager entries and no name.
+    /// A mount of `volume_id` at `virtual_path` with no eager entries, no name
+    /// and the server's default limits.
     ///
     /// # Errors
     ///
@@ -41,6 +50,9 @@ impl RemoteVolume {
                 mode,
                 eager: Vec::new(),
                 name: None,
+                size_limit: None,
+                write_operations_limit: None,
+                read_operations_limit: None,
             })
         } else {
             Err(value_error(format!(
@@ -68,6 +80,27 @@ impl RemoteVolume {
         self.name = Some(name);
         Ok(self)
     }
+
+    /// Sets the most bytes the volume may hold.
+    #[must_use]
+    pub fn with_size_limit(mut self, bytes: u64) -> Self {
+        self.size_limit = Some(bytes);
+        self
+    }
+
+    /// Sets the most write operations the session may make on the volume.
+    #[must_use]
+    pub fn with_write_operations_limit(mut self, operations: u64) -> Self {
+        self.write_operations_limit = Some(operations);
+        self
+    }
+
+    /// Sets the most read operations the session may make on the volume.
+    #[must_use]
+    pub fn with_read_operations_limit(mut self, operations: u64) -> Self {
+        self.read_operations_limit = Some(operations);
+        self
+    }
 }
 
 impl From<&RemoteVolume> for pb::RemoteVolume {
@@ -78,6 +111,9 @@ impl From<&RemoteVolume> for pb::RemoteVolume {
             mode: wire_mode(mount.mode).into(),
             eager: mount.eager.clone().into(),
             name: mount.name.clone(),
+            size_limit: mount.size_limit,
+            write_operations_limit: mount.write_operations_limit,
+            read_operations_limit: mount.read_operations_limit,
         }
     }
 }
