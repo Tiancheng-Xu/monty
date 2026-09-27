@@ -787,11 +787,11 @@ pub struct Configure {
     /// Server-only: remote volumes the client asks a server to mount within the
     /// sandbox. Children ignore it.
     #[prost(message, repeated, tag = "13")]
-    pub volumes: ::prost::alloc::vec::Vec<VolumeMount>,
+    pub volumes: ::prost::alloc::vec::Vec<RemoteVolume>,
 }
 /// A remote volume a client asks a server to mount within the sandbox.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct VolumeMount {
+pub struct RemoteVolume {
     /// Absolute, normalized sandbox path the volume appears at.
     #[prost(string, tag = "1")]
     pub virtual_path: ::prost::alloc::string::String,

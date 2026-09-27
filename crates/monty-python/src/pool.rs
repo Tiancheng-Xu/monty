@@ -43,7 +43,7 @@ use std::{
 
 use monty_pool::{
     Checkout, CheckoutOptions, DEFAULT_DURATION_LIMIT_GRACE, MountSpec, OnPrint, Persistence, Pool, PoolConfig,
-    PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent, VolumeMount,
+    PoolError, PrintFuture, RemoteVolume, ReplConfig, ResumeValue, TurnEvent,
 };
 use monty_proto::python::{InstanceStore, exc_py_to_monty, monty_to_py, py_to_monty_value};
 use monty_types::{
@@ -2147,7 +2147,7 @@ fn extract_mount_specs(mount: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<MountSp
 }
 
 /// Extracts `RemoteVolume | Sequence[RemoteVolume] | None` into the mounts sent on `Configure`.
-fn extract_volumes(volumes: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<VolumeMount>> {
+fn extract_volumes(volumes: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<RemoteVolume>> {
     let Some(volumes) = volumes else {
         return Ok(vec![]);
     };

@@ -18,7 +18,7 @@ use std::{
 use monty_pool::telemetry::{TelemetryAdapter, configure_telemetry_adapter};
 use monty_pool::{
     Checkout, CheckoutOptions, MountSpec, MountSpecMode, Persistence, Pool, PoolConfig, PoolError, PrintFuture,
-    ReplConfig, ResumeValue, TurnEvent, VolumeMount,
+    RemoteVolume, ReplConfig, ResumeValue, TurnEvent,
 };
 use monty_proto::{MAX_FRAME_LEN, WireFunctionCall, decode_frame, encode_to_capped_vec, pb, resume_call_from_proto};
 use monty_types::{CallArgs, ExtFunctionResult, MontyObject, MontyUuid, PrintStream, ResourceLimits, SourceRange};
@@ -188,8 +188,8 @@ async fn volumes_ride_on_configure() {
     let pool = Pool::new(config).await.expect("pool");
     let repl = ReplConfig {
         volumes: vec![
-            VolumeMount::new("/data", MontyUuid::from_u128(1), MountSpecMode::ReadOnly).expect("mount"),
-            VolumeMount::new("/out/", MontyUuid::from_u128(2), MountSpecMode::ReadWrite)
+            RemoteVolume::new("/data", MontyUuid::from_u128(1), MountSpecMode::ReadOnly).expect("mount"),
+            RemoteVolume::new("/out/", MontyUuid::from_u128(2), MountSpecMode::ReadWrite)
                 .expect("mount")
                 .with_eager(["config.json", "models/"])
                 .with_name("scratch")
@@ -202,14 +202,14 @@ async fn volumes_ride_on_configure() {
     assert_eq!(
         configure.volumes,
         vec![
-            pb::VolumeMount {
+            pb::RemoteVolume {
                 virtual_path: "/data".to_owned(),
                 volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
                 mode: pb::VolumeMode::ReadOnly.into(),
                 eager: vec![].into(),
                 name: None,
             },
-            pb::VolumeMount {
+            pb::RemoteVolume {
                 virtual_path: "/out".to_owned(),
                 volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
                 mode: pb::VolumeMode::ReadWrite.into(),

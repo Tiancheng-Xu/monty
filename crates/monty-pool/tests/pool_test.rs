@@ -25,8 +25,8 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 #[cfg(unix)]
 use insta::assert_snapshot;
 use monty_pool::{
-    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent,
-    VolumeMount, on_print_sync,
+    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, RemoteVolume, ReplConfig, ResumeValue,
+    TurnEvent, on_print_sync,
 };
 // only the unix-gated raw-path test forges worker frames
 #[cfg(unix)]
@@ -159,7 +159,7 @@ fn write_fake_monty(dir: &Path, script: &str) -> PathBuf {
 async fn volumes_are_refused_on_the_subprocess_transport() {
     let pool = Pool::new(config()).await.unwrap();
     let repl = ReplConfig {
-        volumes: vec![VolumeMount::new("/data", MontyUuid::from_u128(7), MountSpecMode::ReadOnly).unwrap()],
+        volumes: vec![RemoteVolume::new("/data", MontyUuid::from_u128(7), MountSpecMode::ReadOnly).unwrap()],
         ..ReplConfig::default()
     };
     let Err(err) = pool.checkout(&repl).await else {
@@ -178,11 +178,11 @@ async fn volumes_are_refused_on_the_subprocess_transport() {
     session.finish().await.unwrap();
 }
 
-/// `VolumeMount` requires an absolute virtual path, which it normalizes, and a
+/// `RemoteVolume` requires an absolute virtual path, which it normalizes, and a
 /// name of 1 to 128 bytes without control characters.
 #[test]
 fn volume_mount_validates_its_arguments() {
-    let mount = VolumeMount::new("/data//models/./", MontyUuid::from_u128(1), MountSpecMode::Overlay).unwrap();
+    let mount = RemoteVolume::new("/data//models/./", MontyUuid::from_u128(1), MountSpecMode::Overlay).unwrap();
     assert_eq!(mount.virtual_path, "/data/models");
     assert_eq!(mount.mode, MountSpecMode::Overlay);
     assert!(mount.eager.is_empty() && mount.name.is_none(), "{mount:?}");
@@ -193,12 +193,12 @@ fn volume_mount_validates_its_arguments() {
         .unwrap();
     assert_eq!(named.eager, vec!["config.json".to_owned(), "models/".to_owned()]);
     assert_eq!(named.name.as_deref(), Some("scratch"));
-    let value_error = |result: Result<VolumeMount, PoolError>| match result {
+    let value_error = |result: Result<RemoteVolume, PoolError>| match result {
         Err(PoolError::Runtime(exc)) => exc.to_string(),
         other => panic!("expected a ValueError, got {other:?}"),
     };
     assert_eq!(
-        value_error(VolumeMount::new(
+        value_error(RemoteVolume::new(
             "data",
             MontyUuid::from_u128(1),
             MountSpecMode::ReadOnly

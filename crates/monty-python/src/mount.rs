@@ -8,13 +8,14 @@
 use std::{fmt::Write as _, path::PathBuf};
 
 use monty_fs::{MountMode, MountRoot};
-use monty_pool::{MountSpec, MountSpecMode, PoolError, VolumeMount};
+use monty_pool::{MountSpec, MountSpecMode, PoolError, RemoteVolume};
 use monty_proto::python::{exc_monty_to_py, uuid_to_py};
 use monty_types::MontyUuid;
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     intern,
     prelude::*,
+    sync::PyOnceLock,
     types::PyTuple,
 };
 
@@ -223,7 +224,7 @@ fn mount_mode_name(mode: MountSpecMode) -> &'static str {
 /// `close()`. The default mode is `'read-only'`, not `MountDir`'s `'overlay'`.
 #[pyclass(name = "RemoteVolume", module = "pydantic_monty", frozen, eq)]
 #[derive(PartialEq, Eq)]
-pub struct PyRemoteVolume(VolumeMount);
+pub struct PyRemoteVolume(RemoteVolume);
 
 #[pymethods]
 impl PyRemoteVolume {
@@ -245,7 +246,7 @@ impl PyRemoteVolume {
         name: Option<&str>,
     ) -> PyResult<Self> {
         let mode = parse_mount_mode(mode)?;
-        let mount = VolumeMount::new(virtual_path, volume_id_from_py(py, id)?, mode)
+        let mount = RemoteVolume::new(virtual_path, volume_id_from_py(py, id)?, mode)
             .map_err(|err| volume_err_to_py(py, err))?
             .with_eager(eager.unwrap_or_default());
         let mount = match name {
@@ -307,12 +308,12 @@ impl PyRemoteVolume {
 
 impl PyRemoteVolume {
     /// The mount as the pool sends it on `Configure`.
-    pub(crate) fn mount(&self) -> VolumeMount {
+    pub(crate) fn mount(&self) -> RemoteVolume {
         self.0.clone()
     }
 }
 
-/// Raises a `VolumeMount` builder's `ValueError` as that Python exception
+/// Raises a `RemoteVolume` builder's `ValueError` as that Python exception
 /// itself: it is an argument error here, not a session failure.
 fn volume_err_to_py(py: Python<'_>, err: PoolError) -> PyErr {
     match err {
@@ -324,11 +325,12 @@ fn volume_err_to_py(py: Python<'_>, err: PoolError) -> PyErr {
 /// Reads a volume ID from a `uuid.UUID`, or makes one with `uuid.uuid4()`
 /// when none is given.
 fn volume_id_from_py(py: Python<'_>, id: Option<&Bound<'_, PyAny>>) -> PyResult<MontyUuid> {
-    let uuid_module = py.import(intern!(py, "uuid"))?;
+    static UUID_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+    static UUID4: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     let uuid = match id {
-        Some(id) if id.is_instance(&uuid_module.getattr(intern!(py, "UUID"))?)? => id.clone(),
+        Some(id) if id.is_instance(UUID_CLASS.import(py, "uuid", "UUID")?)? => id.clone(),
         Some(_) => return Err(PyTypeError::new_err("id must be a uuid.UUID or None")),
-        None => uuid_module.call_method0(intern!(py, "uuid4"))?,
+        None => UUID4.import(py, "uuid", "uuid4")?.call0()?,
     };
     let bytes: [u8; 16] = uuid.getattr(intern!(py, "bytes"))?.extract()?;
     Ok(MontyUuid::from_bytes(bytes))

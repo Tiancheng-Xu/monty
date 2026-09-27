@@ -12,7 +12,7 @@ use crate::{
 // non_exhaustive: mount options may be added
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct VolumeMount {
+pub struct RemoteVolume {
     /// Absolute, normalized sandbox path the volume appears at.
     pub virtual_path: String,
     /// Identifies the volume.
@@ -26,7 +26,7 @@ pub struct VolumeMount {
     pub name: Option<String>,
 }
 
-impl VolumeMount {
+impl RemoteVolume {
     /// A mount of `volume_id` at `virtual_path` with no eager entries and no name.
     ///
     /// # Errors
@@ -80,11 +80,11 @@ impl VolumeMount {
     }
 }
 
-/// Longest [`VolumeMount::name`], in bytes.
+/// Longest [`RemoteVolume::name`], in bytes.
 const VOLUME_NAME_MAX: usize = 128;
 
-impl From<&VolumeMount> for pb::VolumeMount {
-    fn from(mount: &VolumeMount) -> Self {
+impl From<&RemoteVolume> for pb::RemoteVolume {
+    fn from(mount: &RemoteVolume) -> Self {
         Self {
             virtual_path: mount.virtual_path.clone(),
             volume_id: Some(pb::Uuid::from(&mount.volume_id)),

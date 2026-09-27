@@ -53,11 +53,11 @@ fn every_schema_repeated_field_is_budgeted() {
         |message: &pb::Configure| &message.volumes,
     );
     check_repeated(
-        "monty.v1.VolumeMount.eager",
+        "monty.v1.RemoteVolume.eager",
         4,
         WireType::LengthDelimited,
         &[],
-        |message: &pb::VolumeMount| &message.eager,
+        |message: &pb::RemoteVolume| &message.eager,
     );
     check_repeated(
         "monty.v1.Feed.inputs",

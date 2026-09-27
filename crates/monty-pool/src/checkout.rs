@@ -33,7 +33,7 @@ use crate::telemetry::{TelemetryContext, metrics::outcome};
 use crate::{
     CrashCause, PoolConfig, PoolError,
     pool::{CapacityGuard, PoolInner},
-    volume::VolumeMount,
+    remote_volume::RemoteVolume,
     worker::Worker,
 };
 
@@ -79,7 +79,7 @@ pub struct ReplConfig {
     /// Whether a serving relay may store the session; subprocess workers ignore it.
     pub persistence: Persistence,
     /// Remote volumes to mount; the subprocess transport refuses any.
-    pub volumes: Vec<VolumeMount>,
+    pub volumes: Vec<RemoteVolume>,
 }
 
 /// How a serving relay (`monty-server`) treats a session's state.
@@ -181,6 +181,7 @@ impl fmt::Debug for CheckoutOptions {
 /// remote machine). Every OS call still surfaces as a [`TurnEvent::OsCall`];
 /// mounts are consulted only when the caller asks, via
 /// [`Checkout::resume_from_mounts`].
+// TODO rename to LocalVolume at v2
 #[derive(Debug, Clone)]
 pub struct MountSpec {
     /// The host directory, opened when this spec was built and shared by every
@@ -1148,7 +1149,7 @@ impl Checkout {
             return Ok(());
         }
         for requirement in &requirements {
-            validate_requirement(requirement).map_err(invalid_requirement)?;
+            validate_requirement(requirement).map_err(value_error)?;
         }
         let request = request(pb::parent_request::Kind::InstallDependencies(pb::InstallDependencies {
             requirements: requirements.into(),
@@ -2203,12 +2204,6 @@ pub(crate) fn request(kind: pb::parent_request::Kind) -> pb::ParentRequest {
         kind: Some(kind),
         trace_parent: None,
     }
-}
-
-/// Converts a shared requirement-validation failure into a session-preserving
-/// Python `ValueError`.
-fn invalid_requirement(message: String) -> PoolError {
-    value_error(message)
 }
 
 /// A host-side argument error as the Python `ValueError` a binding raises.

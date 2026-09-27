@@ -651,14 +651,14 @@ fn os_policy_round_trip() {
 #[test]
 fn configure_volumes_round_trip() {
     let volumes = vec![
-        pb::VolumeMount {
+        pb::RemoteVolume {
             virtual_path: "/data".to_owned(),
             volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
             mode: pb::VolumeMode::ReadOnly.into(),
             eager: vec![].into(),
             name: None,
         },
-        pb::VolumeMount {
+        pb::RemoteVolume {
             virtual_path: "/out".to_owned(),
             volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
             mode: pb::VolumeMode::ReadWrite.into(),

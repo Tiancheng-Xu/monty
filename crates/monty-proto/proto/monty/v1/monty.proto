@@ -603,7 +603,7 @@ message Configure {
   Persistence persistence = 12;
   // Server-only: remote volumes the client asks a server to mount within the
   // sandbox. Children ignore it.
-  repeated VolumeMount volumes = 13;
+  repeated RemoteVolume volumes = 13;
 }
 
 // How a serving relay treats the session's state; children ignore it.
@@ -617,7 +617,7 @@ enum Persistence {
 }
 
 // A remote volume a client asks a server to mount within the sandbox.
-message VolumeMount {
+message RemoteVolume {
   // Absolute, normalized sandbox path the volume appears at.
   string virtual_path = 1;
   // Identifies the volume.

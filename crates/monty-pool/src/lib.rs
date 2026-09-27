@@ -7,7 +7,7 @@ pub mod telemetry;
 /// Compatibility alias for the former public module name.
 #[cfg(feature = "telemetry")]
 pub use telemetry as telemetry_adapter;
-mod volume;
+mod remote_volume;
 mod worker;
 
 use std::{borrow::Cow, error, fmt, io, num::NonZero, path::PathBuf, process::ExitStatus, thread, time::Duration};
@@ -23,7 +23,7 @@ pub use crate::{
         ResumeValue, TurnEvent, on_print_sync,
     },
     pool::Pool,
-    volume::VolumeMount,
+    remote_volume::RemoteVolume,
 };
 
 /// How the pool reaches its workers.

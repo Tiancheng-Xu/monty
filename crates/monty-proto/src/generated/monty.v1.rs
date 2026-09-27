@@ -796,12 +796,12 @@ pub struct Configure {
     /// Server-only: remote volumes the client asks a server to mount within the
     /// sandbox. Children ignore it.
     #[prost(message, repeated, tag = "13")]
-    pub volumes: crate::budgeted_prost::alloc::vec::Vec<VolumeMount>,
+    pub volumes: crate::budgeted_prost::alloc::vec::Vec<RemoteVolume>,
 }
 /// A remote volume a client asks a server to mount within the sandbox.
 #[derive(Clone, PartialEq, Eq, Hash, crate::budgeted_prost::Message)]
 #[prost(prost_path = "crate::budgeted_prost")]
-pub struct VolumeMount {
+pub struct RemoteVolume {
     /// Absolute, normalized sandbox path the volume appears at.
     #[prost(string, tag = "1")]
     pub virtual_path: crate::budgeted_prost::alloc::string::String,

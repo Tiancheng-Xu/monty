@@ -117,7 +117,7 @@ _LENGTH_PREFIX = struct.Struct('<I')
 _REQUEST_CONFIGURE, _REQUEST_DUMP, _REQUEST_LOAD = 1, 7, 8
 _EVENT_PRINT, _EVENT_DUMP_RESULT, _EVENT_SHUTDOWN = 1, 9, 12
 _EVENT_SESSION_ID = 28
-# `Configure.volumes` and the `VolumeMount` fields
+# `Configure.volumes` and the `RemoteVolume` fields
 _CONFIGURE_VOLUMES = 13
 _VOLUME_PATH, _VOLUME_ID, _VOLUME_MODE, _VOLUME_EAGER, _VOLUME_NAME = 1, 2, 3, 4, 5
 
@@ -246,7 +246,7 @@ def _proto_repeated(buf: bytes, field: int) -> list[bytes]:
 
 
 def _decode_volume(buf: bytes) -> dict[str, Any]:
-    """One `VolumeMount` message as a dict."""
+    """One `RemoteVolume` message as a dict."""
     fields = _proto_fields(buf)
     return {
         'virtual_path': fields[_VOLUME_PATH].decode(),
