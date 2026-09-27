@@ -1726,11 +1726,7 @@ fn function_call(call_id: u32) -> pb::child_event::Kind {
 
 /// Asserts the next request is `Configure` and acknowledges it.
 fn expect_configure(socket: &mut WebSocket<TcpStream>) {
-    let request = try_read_request(socket).expect("configure");
-    assert!(
-        matches!(request.kind, Some(pb::parent_request::Kind::Configure(_))),
-        "expected Configure, got {request:?}"
-    );
+    read_configure(socket);
     send_kind(socket, ok_event());
 }
 
@@ -2078,11 +2074,7 @@ fn read_configure(socket: &mut WebSocket<TcpStream>) -> pb::Configure {
 
 /// Acknowledges the next request, which must be `Configure`, naming the session `id`.
 fn configure_with_session_id(socket: &mut WebSocket<TcpStream>, id: &[u8]) {
-    let request = try_read_request(socket).expect("configure");
-    assert!(
-        matches!(request.kind, Some(pb::parent_request::Kind::Configure(_))),
-        "expected Configure, got {request:?}"
-    );
+    read_configure(socket);
     send_with_session_id(socket, ok_event(), id);
 }
 

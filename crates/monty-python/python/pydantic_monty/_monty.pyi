@@ -215,9 +215,10 @@ class RemoteVolume:
 
     - `'read-only'` — writes raise `PermissionError`.
     - `'read-write'` — writes are persisted to the volume.
-    - `'overlay'` (default) — writes are never persisted. They last until the
-      connection ends, where `MountDir`'s last until the feed ends: they
-      survive feeds and are lost when the session resumes on a new connection.
+    - `'overlay'` (default) — writes are never persisted. A volume's overlay
+      lasts until the connection ends: it survives feeds and is lost when the
+      session resumes on a new connection. A `MountDir`'s overlay is discarded
+      when the feed ends.
 
     The three limits take the server's default when `None`.
 
