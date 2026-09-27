@@ -41,9 +41,13 @@ impl RemoteVolume {
     /// # Errors
     ///
     /// Returns [`PoolError::Runtime`] wrapping a `ValueError` if the virtual
-    /// path is not absolute.
+    /// path is not absolute or contains a NUL byte.
     pub fn new(virtual_path: &str, volume_id: MontyUuid, mode: MountSpecMode) -> Result<Self, PoolError> {
-        if virtual_path.starts_with('/') {
+        if virtual_path.contains('\0') {
+            Err(value_error(format!(
+                "virtual path must not contain NUL bytes: {virtual_path:?}"
+            )))
+        } else if virtual_path.starts_with('/') {
             Ok(Self {
                 virtual_path: normalize_virtual_path(virtual_path).into_owned(),
                 volume_id,

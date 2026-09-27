@@ -177,7 +177,7 @@ async fn drives_a_session_over_websocket() {
 }
 
 /// `ReplConfig::volumes` ride on the `Configure` a checkout opens with, as
-/// given: path, uuid bytes, mode, eager entries and name.
+/// given: path, uuid bytes, mode, eager entries, name and limits.
 #[tokio::test]
 async fn volumes_ride_on_configure() {
     let (configure_tx, configure_rx) = mpsc::channel();

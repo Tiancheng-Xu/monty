@@ -199,6 +199,14 @@ fn volume_mount_validates_its_arguments() {
     };
     assert_eq!(
         value_error(RemoteVolume::new(
+            "/da\0ta",
+            MontyUuid::from_u128(1),
+            MountSpecMode::ReadOnly
+        )),
+        "ValueError: virtual path must not contain NUL bytes: \"/da\\0ta\""
+    );
+    assert_eq!(
+        value_error(RemoteVolume::new(
             "data",
             MontyUuid::from_u128(1),
             MountSpecMode::ReadOnly

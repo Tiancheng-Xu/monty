@@ -10,7 +10,7 @@ use std::{fmt::Write as _, path::PathBuf};
 use monty_fs::{MountMode, MountRoot};
 use monty_pool::{MountSpec, MountSpecMode, PoolError, RemoteVolume};
 use monty_proto::python::{exc_monty_to_py, uuid_to_py};
-use monty_types::MontyUuid;
+use monty_types::{MontyUuid, StringRepr};
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     intern,
@@ -323,17 +323,21 @@ impl PyRemoteVolume {
     fn __repr__(&self) -> String {
         let mount = &self.0;
         let mut repr = format!(
-            "RemoteVolume(virtual_path='{}', id='{}', mode='{}'",
-            mount.virtual_path,
+            "RemoteVolume(virtual_path={}, id='{}', mode='{}'",
+            StringRepr(&mount.virtual_path),
             mount.volume_id,
             mount_mode_name(mount.mode)
         );
         if !mount.eager.is_empty() {
-            // `{:?}` of a `Vec<String>` is a valid Python list literal for ASCII names
-            let _ = write!(repr, ", eager={:?}", mount.eager);
+            repr.push_str(", eager=[");
+            for (index, path) in mount.eager.iter().enumerate() {
+                let separator = if index == 0 { "" } else { ", " };
+                let _ = write!(repr, "{separator}{}", StringRepr(path));
+            }
+            repr.push(']');
         }
         if let Some(name) = &mount.name {
-            let _ = write!(repr, ", name='{name}'");
+            let _ = write!(repr, ", name={}", StringRepr(name));
         }
         let limits = [
             ("size_limit", mount.size_limit),

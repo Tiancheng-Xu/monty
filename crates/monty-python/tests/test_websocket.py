@@ -519,7 +519,11 @@ def test_volume_is_plain_data():
     assert named.eager == snapshot(('config.json', 'models/'))
     assert named.name == snapshot('scratch')
     assert repr(named) == snapshot(
-        "RemoteVolume(virtual_path='/out', id='00000000-0000-0000-0000-000000000002', mode='read-write', eager=[\"config.json\", \"models/\"], name='scratch')"
+        "RemoteVolume(virtual_path='/out', id='00000000-0000-0000-0000-000000000002', mode='read-write', eager=['config.json', 'models/'], name='scratch')"
+    )
+    quoted = RemoteVolume("/it's", id=UUID(int=2), eager=['a\nb'], name='say "hi" it\'s')
+    assert repr(quoted) == snapshot(
+        "RemoteVolume(virtual_path=\"/it's\", id='00000000-0000-0000-0000-000000000002', mode='overlay', eager=['a\\nb'], name='say \"hi\" it\\'s')"
     )
 
 
@@ -527,6 +531,10 @@ def test_volume_is_plain_data():
     ('kwargs', 'message'),
     [
         ({'id': UUID(int=1), 'virtual_path': 'data'}, "virtual path must be absolute, got: 'data'"),
+        (
+            {'id': UUID(int=1), 'virtual_path': '/da\x00ta'},
+            'virtual path must not contain NUL bytes: "/da\\0ta"',
+        ),
         (
             {'id': UUID(int=1), 'virtual_path': '/data', 'mode': 'rw'},
             "Invalid mode 'rw', expected 'read-only', 'read-write', or 'overlay'",

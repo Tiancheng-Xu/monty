@@ -41,6 +41,7 @@ if __name__ == '__main__':
 `RemoteVolume` asks the server to mount a remote volume within the sandbox:
 
 ```python test="skip"
+import asyncio
 from uuid import UUID
 
 from pydantic_monty import AsyncMontyWebsocket, RemoteVolume
@@ -51,6 +52,9 @@ async def main() -> None:
     async with AsyncMontyWebsocket('...') as pool:
         async with pool.checkout(volumes=data) as session:
             print(await session.feed_run("open('/data/config.json').read()"))
+
+
+asyncio.run(main())
 ```
 
 ## Usage with a local monty worker
