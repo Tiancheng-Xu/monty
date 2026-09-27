@@ -162,12 +162,12 @@ async fn volumes_are_refused_on_the_subprocess_transport() {
         volumes: vec![RemoteVolume::new("/data", MontyUuid::from_u128(7), MountSpecMode::ReadOnly).unwrap()],
         ..ReplConfig::default()
     };
-    let Err(err) = pool.checkout(&repl).await else {
-        panic!("expected the checkout to be refused");
+    let Err(PoolError::Runtime(exc)) = pool.checkout(&repl).await else {
+        panic!("expected the checkout to be refused with a ValueError");
     };
     assert_eq!(
-        err.to_string(),
-        "failed to spawn monty worker: volumes are not supported by the subprocess transport"
+        exc.to_string(),
+        "ValueError: volumes are not supported by the subprocess transport"
     );
     let mut session = pool.checkout(&ReplConfig::default()).await.unwrap();
     let event = session

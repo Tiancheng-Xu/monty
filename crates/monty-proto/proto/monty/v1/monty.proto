@@ -623,8 +623,10 @@ message RemoteVolume {
   // Identifies the volume.
   Uuid volume_id = 2;
   MountMode mode = 3;
-  // Mount-relative paths to load before the session runs; a trailing `/`
-  // names a directory.
+  // Files to load before the session runs, relative to `virtual_path`: a
+  // file, or a pattern read as Python's `Path.glob` reads one. A trailing `/`
+  // loads everything beneath the directories it names, and `/` alone is the
+  // whole volume. Any other entry that matches no file fails the session.
   repeated string eager = 4;
   // Optional label for the volume: 1 to 128 bytes, no control characters.
   optional string name = 5;
@@ -645,7 +647,8 @@ enum MountMode {
   MOUNT_MODE_READ_ONLY = 1;
   // Writes are persisted to the volume.
   MOUNT_MODE_READ_WRITE = 2;
-  // Writes are visible to the session but never persisted.
+  // Writes are visible to the session until its connection ends, and never
+  // persisted.
   MOUNT_MODE_OVERLAY = 3;
 }
 

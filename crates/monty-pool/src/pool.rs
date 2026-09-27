@@ -16,7 +16,7 @@ use tokio::{
 
 use crate::{
     PoolConfig, PoolError,
-    checkout::{Checkout, CheckoutOptions, Redial, ReplConfig, request},
+    checkout::{Checkout, CheckoutOptions, Redial, ReplConfig, request, value_error},
     worker::Worker,
 };
 
@@ -109,7 +109,7 @@ impl Pool {
     pub async fn checkout_with(&self, repl: &ReplConfig, mut options: CheckoutOptions) -> Result<Checkout, PoolError> {
         // only a server can mount volumes
         if !repl.volumes.is_empty() && !self.inner.config.transport.is_websocket() {
-            return Err(PoolError::Spawn(
+            return Err(value_error(
                 "volumes are not supported by the subprocess transport".to_owned(),
             ));
         }

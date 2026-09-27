@@ -225,7 +225,7 @@ A remote without persistence refuses `Checkout::dump` and `Checkout::restore` wi
 session carries on.
 `ReplConfig::volumes` asks a remote to mount remote volumes within the sandbox, each a `RemoteVolume`: a virtual path,
 the volume's UUID, a `MountSpecMode` and optional size, write-operation and read-operation limits.
-`Pool::checkout` refuses them on the subprocess transport with `PoolError::Spawn`.
+`Pool::checkout` refuses them on the subprocess transport with a `ValueError` (`PoolError::Runtime`).
 With `PoolConfig::auto_resume` (the default), a shutdown answering a named session's request is not returned: the
 checkout redials, loads what the `ShutdownDump` named into a new session, re-sends the request and adopts the new
 session's ID.

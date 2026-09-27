@@ -290,7 +290,7 @@ impl PyRemoteVolume {
         mount_mode_name(self.0.mode)
     }
 
-    /// The mount-relative paths to load before the session runs.
+    /// The files and patterns to load before the session runs.
     #[getter]
     fn eager<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, &self.0.eager)

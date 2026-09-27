@@ -211,12 +211,13 @@ class RemoteVolume:
     configuration: nothing is opened here, so there is no `close()`. Local
     workers mount no volumes, so `Monty` and `AsyncMonty` do not take any.
 
-    The modes and their default are `MountDir`'s:
+    The modes and their default are `MountDir`'s, but an overlay lasts longer:
 
     - `'read-only'` — writes raise `PermissionError`.
     - `'read-write'` — writes are persisted to the volume.
-    - `'overlay'` (default) — writes are visible to the session but never
-      persisted.
+    - `'overlay'` (default) — writes are never persisted. They last until the
+      connection ends, where `MountDir`'s last until the feed ends: they
+      survive feeds and are lost when the session resumes on a new connection.
 
     The three limits take the server's default when `None`.
 
@@ -262,8 +263,11 @@ class RemoteVolume:
                 `uuid.uuid4()`, naming a new volume; read it back from `id` to
                 mount the same volume again.
             mode: `'read-only'`, `'read-write'` or `'overlay'` (default).
-            eager: Mount-relative paths to load before the session runs; a
-                trailing `/` names a directory.
+            eager: Files to load before the session runs, relative to
+                `virtual_path`: a file, or a pattern read as `Path.glob` reads
+                one. A trailing `/` loads everything beneath the directories it
+                names, and `/` alone is the whole volume. Any other entry that
+                matches no file fails the checkout.
             name: Optional label of 1 to 128 bytes without control characters.
                 Raises `ValueError` otherwise.
             size_limit: Most bytes the volume may hold.

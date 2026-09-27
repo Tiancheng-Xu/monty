@@ -2067,6 +2067,15 @@ async fn refused_restore_keeps_the_session_id() {
 // redials, loads its ID into a new session and re-sends the request the relay
 // did not run.
 
+/// Reads the next request, which must be `Configure`, without answering it.
+fn read_configure(socket: &mut WebSocket<TcpStream>) -> pb::Configure {
+    let request = try_read_request(socket).expect("configure");
+    match request.kind {
+        Some(pb::parent_request::Kind::Configure(configure)) => configure,
+        other => panic!("expected Configure, got {other:?}"),
+    }
+}
+
 /// Acknowledges the next request, which must be `Configure`, naming the session `id`.
 fn configure_with_session_id(socket: &mut WebSocket<TcpStream>, id: &[u8]) {
     let request = try_read_request(socket).expect("configure");
@@ -2125,6 +2134,55 @@ async fn shutdown_resumes_transparently() {
     );
     // the reload started a new session under the ID its reply carried
     assert_eq!(checkout.session_id(), Some(&b"sess-2"[..]));
+    checkout.finish().await.expect("finish");
+    join_server(server).await;
+}
+
+/// The redial re-sends the session's `Configure`, volumes included, so the
+/// resumed session has the mounts the first one asked for.
+#[tokio::test]
+async fn resume_resends_the_volumes() {
+    let (configure_tx, configure_rx) = mpsc::channel();
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let server = thread::spawn(move || {
+        let mut socket = accept_ws(&listener);
+        configure_tx.send(read_configure(&mut socket)).expect("first configure");
+        send_with_session_id(&mut socket, ok_event(), b"sess-1");
+        expect_feed(&mut socket, "1 + 1");
+        send_kind(&mut socket, shutdown(Some(b"sess-1")));
+        let mut socket = accept_ws(&listener);
+        configure_tx
+            .send(read_configure(&mut socket))
+            .expect("second configure");
+        send_kind(&mut socket, ok_event());
+        expect_load(&mut socket, b"sess-1");
+        send_with_session_id(&mut socket, ok_event(), b"sess-2");
+        expect_feed(&mut socket, "1 + 1");
+        send_complete(&mut socket);
+        while try_read_request(&mut socket).is_some() {}
+    });
+
+    let repl = ReplConfig {
+        volumes: vec![
+            RemoteVolume::new("/data", MontyUuid::from_u128(1), MountSpecMode::Overlay)
+                .expect("mount")
+                .with_eager(["config.json"])
+                .with_size_limit(1_000_000),
+        ],
+        ..ReplConfig::default()
+    };
+    let pool = websocket_pool(port).await;
+    let mut checkout = pool.checkout(&repl).await.expect("checkout");
+    checkout
+        .feed("1 + 1", vec![], vec![], false, &mut no_print)
+        .await
+        .expect("the drain is invisible to the caller");
+    let first = configure_rx.recv().expect("first configure");
+    let second = configure_rx.recv().expect("second configure");
+    assert_eq!(first.volumes.len(), 1);
+    assert_eq!(first.volumes[0].virtual_path, "/data");
+    assert_eq!(second.volumes, first.volumes);
     checkout.finish().await.expect("finish");
     join_server(server).await;
 }

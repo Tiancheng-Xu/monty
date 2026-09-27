@@ -17,10 +17,13 @@ pub struct RemoteVolume {
     pub virtual_path: String,
     /// Identifies the volume.
     pub volume_id: MontyUuid,
-    /// What the sandbox may do to the volume.
+    /// What the sandbox may do to the volume. `Overlay` writes last until the
+    /// connection ends, not the feed.
     pub mode: MountSpecMode,
-    /// Mount-relative paths to load before the session runs; a trailing `/`
-    /// names a directory.
+    /// Files to load before the session runs, relative to `virtual_path`: a
+    /// file, or a pattern read as Python's `Path.glob` reads one. A trailing
+    /// `/` loads everything beneath the directories it names, and `/` alone is
+    /// the whole volume. Any other entry that matches no file fails the checkout.
     pub eager: Vec<String>,
     /// Optional label for the volume.
     pub name: Option<String>,
@@ -65,10 +68,11 @@ impl RemoteVolume {
         }
     }
 
-    /// Sets the mount-relative paths to load before the session runs.
+    /// Sets the files and patterns to load before the session runs; see
+    /// [`Self::eager`].
     #[must_use]
-    pub fn with_eager(mut self, paths: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.eager = paths.into_iter().map(Into::into).collect();
+    pub fn with_eager(mut self, entries: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.eager = entries.into_iter().map(Into::into).collect();
         self
     }
 

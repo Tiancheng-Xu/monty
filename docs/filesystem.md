@@ -240,13 +240,17 @@ none.
 
     The TypeScript package is subprocess-only and cannot dial a server, so it has no volumes.
 
-The modes and their default are those of a [mount](#modes):
+The modes and their default are those of a [mount](#modes), but an overlay lasts longer:
 
 | Mode                  | Writes                                     |
 | --------------------- | ------------------------------------------ |
 | `'read-only'`         | raise `PermissionError`                    |
 | `'read-write'`        | persisted to the volume                    |
 | `'overlay'` (default) | visible to the session but never persisted |
+
+A mount's overlay is discarded when the feed ends.
+A volume's overlay lasts until the connection ends: it survives feeds, and is lost when the session resumes on a new
+connection.
 
 Three optional limits bound what a session can do to a volume; each takes the server's default when not given:
 
@@ -256,8 +260,23 @@ Three optional limits bound what a session can do to a volume; each takes the se
 | `write_operations_limit` | write operations the session may make on the volume |
 | `read_operations_limit`  | read operations the session may make on the volume  |
 
-`eager` lists mount-relative paths to load before the session runs, with a trailing `/` naming a directory, and `name`
-is an optional label for the volume.
+`name` is an optional label for the volume.
+
+### Eager files
+
+`eager` lists files the server loads into memory before the session runs, so reading them never waits on the store.
+Each entry is relative to the volume's virtual path: a file, or a pattern read as
+[`Path.glob()`](https://docs.python.org/3/library/pathlib.html#pathlib.Path.glob) reads one.
+A trailing `/` names a directory, and everything beneath it is loaded.
+An entry that matches no file fails the checkout, so a typo is an error rather than an empty load.
+
+```python test="skip"
+from pydantic_monty import RemoteVolume
+
+data = RemoteVolume('/data', eager=['config.json', 'models/**/*.bin', 'prompts/'])
+```
+
+This loads `/data/config.json`, every `.bin` file anywhere under `/data/models`, and everything under `/data/prompts`.
 
 ## I/O timeouts and cancellation
 

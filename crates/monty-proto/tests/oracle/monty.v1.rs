@@ -800,8 +800,10 @@ pub struct RemoteVolume {
     pub volume_id: ::core::option::Option<Uuid>,
     #[prost(enumeration = "MountMode", tag = "3")]
     pub mode: i32,
-    /// Mount-relative paths to load before the session runs; a trailing `/`
-    /// names a directory.
+    /// Files to load before the session runs, relative to `virtual_path`: a
+    /// file, or a pattern read as Python's `Path.glob` reads one. A trailing `/`
+    /// loads everything beneath the directories it names, and `/` alone is the
+    /// whole volume. Any other entry that matches no file fails the session.
     #[prost(string, repeated, tag = "4")]
     pub eager: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Optional label for the volume: 1 to 128 bytes, no control characters.
@@ -1476,7 +1478,8 @@ pub enum MountMode {
     ReadOnly = 1,
     /// Writes are persisted to the volume.
     ReadWrite = 2,
-    /// Writes are visible to the session but never persisted.
+    /// Writes are visible to the session until its connection ends, and never
+    /// persisted.
     Overlay = 3,
 }
 impl MountMode {
