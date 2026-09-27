@@ -1,6 +1,6 @@
 //! Remote volumes a client can ask a server to mount within the sandbox.
 
-use monty_proto::pb;
+use monty_proto::{pb, validate_volume_name};
 use monty_types::{MontyUuid, normalize_virtual_path};
 
 use crate::{
@@ -64,24 +64,11 @@ impl RemoteVolume {
     /// empty, longer than 128 bytes, or contains a control character.
     pub fn with_name(mut self, name: impl Into<String>) -> Result<Self, PoolError> {
         let name = name.into();
-        if name.is_empty() || name.len() > VOLUME_NAME_MAX {
-            Err(value_error(format!(
-                "volume name must be 1 to {VOLUME_NAME_MAX} bytes, got {} bytes",
-                name.len()
-            )))
-        } else if name.chars().any(char::is_control) {
-            Err(value_error(
-                "volume name must not contain control characters".to_owned(),
-            ))
-        } else {
-            self.name = Some(name);
-            Ok(self)
-        }
+        validate_volume_name(&name).map_err(value_error)?;
+        self.name = Some(name);
+        Ok(self)
     }
 }
-
-/// Longest [`RemoteVolume::name`], in bytes.
-const VOLUME_NAME_MAX: usize = 128;
 
 impl From<&RemoteVolume> for pb::RemoteVolume {
     fn from(mount: &RemoteVolume) -> Self {
@@ -96,10 +83,10 @@ impl From<&RemoteVolume> for pb::RemoteVolume {
 }
 
 /// The wire spelling of a volume's access mode.
-fn wire_mode(mode: MountSpecMode) -> pb::VolumeMode {
+fn wire_mode(mode: MountSpecMode) -> pb::MountMode {
     match mode {
-        MountSpecMode::ReadOnly => pb::VolumeMode::ReadOnly,
-        MountSpecMode::ReadWrite => pb::VolumeMode::ReadWrite,
-        MountSpecMode::Overlay => pb::VolumeMode::Overlay,
+        MountSpecMode::ReadOnly => pb::MountMode::ReadOnly,
+        MountSpecMode::ReadWrite => pb::MountMode::ReadWrite,
+        MountSpecMode::Overlay => pb::MountMode::Overlay,
     }
 }

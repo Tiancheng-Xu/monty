@@ -798,13 +798,13 @@ pub struct RemoteVolume {
     /// Identifies the volume.
     #[prost(message, optional, tag = "2")]
     pub volume_id: ::core::option::Option<Uuid>,
-    #[prost(enumeration = "VolumeMode", tag = "3")]
+    #[prost(enumeration = "MountMode", tag = "3")]
     pub mode: i32,
     /// Mount-relative paths to load before the session runs; a trailing `/`
     /// names a directory.
     #[prost(string, repeated, tag = "4")]
     pub eager: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Optional label for the volume.
+    /// Optional label for the volume: 1 to 128 bytes, no control characters.
     #[prost(string, optional, tag = "5")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1459,7 +1459,7 @@ impl Persistence {
 /// What the sandbox may do to a mounted volume.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum VolumeMode {
+pub enum MountMode {
     /// Read as read-only.
     Unspecified = 0,
     /// Writes raise `PermissionError`.
@@ -1469,26 +1469,26 @@ pub enum VolumeMode {
     /// Writes are visible to the session but never persisted.
     Overlay = 3,
 }
-impl VolumeMode {
+impl MountMode {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Unspecified => "VOLUME_MODE_UNSPECIFIED",
-            Self::ReadOnly => "VOLUME_MODE_READ_ONLY",
-            Self::ReadWrite => "VOLUME_MODE_READ_WRITE",
-            Self::Overlay => "VOLUME_MODE_OVERLAY",
+            Self::Unspecified => "MOUNT_MODE_UNSPECIFIED",
+            Self::ReadOnly => "MOUNT_MODE_READ_ONLY",
+            Self::ReadWrite => "MOUNT_MODE_READ_WRITE",
+            Self::Overlay => "MOUNT_MODE_OVERLAY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "VOLUME_MODE_UNSPECIFIED" => Some(Self::Unspecified),
-            "VOLUME_MODE_READ_ONLY" => Some(Self::ReadOnly),
-            "VOLUME_MODE_READ_WRITE" => Some(Self::ReadWrite),
-            "VOLUME_MODE_OVERLAY" => Some(Self::Overlay),
+            "MOUNT_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "MOUNT_MODE_READ_ONLY" => Some(Self::ReadOnly),
+            "MOUNT_MODE_READ_WRITE" => Some(Self::ReadWrite),
+            "MOUNT_MODE_OVERLAY" => Some(Self::Overlay),
             _ => None,
         }
     }

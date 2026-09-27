@@ -17,6 +17,7 @@ mod requirement;
 #[cfg(feature = "test-util")]
 #[doc(hidden)]
 pub mod test_util;
+mod volume;
 mod wire;
 #[cfg(feature = "worker")]
 pub mod worker;
@@ -101,4 +102,5 @@ pub use frame::{
 };
 pub use generated::pb;
 pub use requirement::validate_requirement;
+pub use volume::{VOLUME_NAME_MAX, validate_volume_name};
 pub use wire::{WireArena, WireFunctionCall, WireIndexes, WireNamedTuple, WireNodePairs};

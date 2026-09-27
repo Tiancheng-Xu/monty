@@ -622,24 +622,24 @@ message RemoteVolume {
   string virtual_path = 1;
   // Identifies the volume.
   Uuid volume_id = 2;
-  VolumeMode mode = 3;
+  MountMode mode = 3;
   // Mount-relative paths to load before the session runs; a trailing `/`
   // names a directory.
   repeated string eager = 4;
-  // Optional label for the volume.
+  // Optional label for the volume: 1 to 128 bytes, no control characters.
   optional string name = 5;
 }
 
 // What the sandbox may do to a mounted volume.
-enum VolumeMode {
+enum MountMode {
   // Read as read-only.
-  VOLUME_MODE_UNSPECIFIED = 0;
+  MOUNT_MODE_UNSPECIFIED = 0;
   // Writes raise `PermissionError`.
-  VOLUME_MODE_READ_ONLY = 1;
+  MOUNT_MODE_READ_ONLY = 1;
   // Writes are persisted to the volume.
-  VOLUME_MODE_READ_WRITE = 2;
+  MOUNT_MODE_READ_WRITE = 2;
   // Writes are visible to the session but never persisted.
-  VOLUME_MODE_OVERLAY = 3;
+  MOUNT_MODE_OVERLAY = 3;
 }
 
 // Rendering of the typing diagnostics a `TypingError` carries; mirrors ty's

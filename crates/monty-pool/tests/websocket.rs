@@ -205,14 +205,14 @@ async fn volumes_ride_on_configure() {
             pb::RemoteVolume {
                 virtual_path: "/data".to_owned(),
                 volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
-                mode: pb::VolumeMode::ReadOnly.into(),
+                mode: pb::MountMode::ReadOnly.into(),
                 eager: vec![].into(),
                 name: None,
             },
             pb::RemoteVolume {
                 virtual_path: "/out".to_owned(),
                 volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
-                mode: pb::VolumeMode::ReadWrite.into(),
+                mode: pb::MountMode::ReadWrite.into(),
                 eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
                 name: Some("scratch".to_owned()),
             },

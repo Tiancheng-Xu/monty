@@ -3,8 +3,8 @@ use std::{collections::HashMap, mem, time::Duration};
 use insta::assert_snapshot;
 use monty::MontyRun;
 use monty_proto::{
-    ProtoConvertError, WireArena, decode_frame, ext_result_from_proto, ext_result_to_proto, named_values_from_proto,
-    named_values_to_proto, os_call_from_proto, os_call_to_proto, pb,
+    ProtoConvertError, VOLUME_NAME_MAX, WireArena, decode_frame, ext_result_from_proto, ext_result_to_proto,
+    named_values_from_proto, named_values_to_proto, os_call_from_proto, os_call_to_proto, pb, validate_volume_name,
 };
 use monty_types::{
     CodeLoc, CompileOptions, DateTimeSource, ExcData, ExcType, ExtFunctionResult, GetenvArgs, JsonErrorData,
@@ -646,6 +646,25 @@ fn os_policy_round_trip() {
     );
 }
 
+/// A volume name is 1 to `VOLUME_NAME_MAX` bytes without control characters.
+#[test]
+fn volume_names_are_validated() {
+    assert_eq!(validate_volume_name("scratch"), Ok(()));
+    assert_eq!(validate_volume_name(&"x".repeat(VOLUME_NAME_MAX)), Ok(()));
+    assert_eq!(
+        validate_volume_name(""),
+        Err("volume name must be 1 to 128 bytes, got 0 bytes".to_owned())
+    );
+    assert_eq!(
+        validate_volume_name(&"x".repeat(VOLUME_NAME_MAX + 1)),
+        Err("volume name must be 1 to 128 bytes, got 129 bytes".to_owned())
+    );
+    assert_eq!(
+        validate_volume_name("a\tb"),
+        Err("volume name must not contain control characters".to_owned())
+    );
+}
+
 /// `Configure.volumes` decodes as sent: two mounts, one with eager entries and
 /// a name, uuid bytes included.
 #[test]
@@ -654,14 +673,14 @@ fn configure_volumes_round_trip() {
         pb::RemoteVolume {
             virtual_path: "/data".to_owned(),
             volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(1))),
-            mode: pb::VolumeMode::ReadOnly.into(),
+            mode: pb::MountMode::ReadOnly.into(),
             eager: vec![].into(),
             name: None,
         },
         pb::RemoteVolume {
             virtual_path: "/out".to_owned(),
             volume_id: Some(pb::Uuid::from(&MontyUuid::from_u128(2))),
-            mode: pb::VolumeMode::ReadWrite.into(),
+            mode: pb::MountMode::ReadWrite.into(),
             eager: vec!["config.json".to_owned(), "models/".to_owned()].into(),
             name: Some("scratch".to_owned()),
         },
