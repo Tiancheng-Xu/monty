@@ -29,7 +29,7 @@ pub use exceptions::{
     MontyConversionError, MontyCrashedError, MontyDisconnectError, MontyError, MontyRuntimeError, MontyShutdown,
     MontySyntaxError, MontyTypingError, PyFrame, PySourceRange,
 };
-pub use mount::{PyMountDir, PyVolume};
+pub use mount::{PyMountDir, PyRemoteVolume};
 pub use pool::{PyAsyncMonty, PyAsyncMontySession, PyAsyncMontyWebsocket, PyMonty, PyMontySession};
 pub use print_target::{PyCollectStreams, PyCollectString};
 use pyo3::{prelude::*, sync::PyOnceLock, types::PyAny};
@@ -145,9 +145,9 @@ mod _monty {
     #[pymodule_export]
     use super::PyNameLookupSnapshot as NameLookupSnapshot;
     #[pymodule_export]
-    use super::PySourceRange as SourceRange;
+    use super::PyRemoteVolume as RemoteVolume;
     #[pymodule_export]
-    use super::PyVolume as Volume;
+    use super::PySourceRange as SourceRange;
     #[pymodule_export]
     use super::telemetry::_install_telemetry;
     use super::{get_not_handled, get_version};

@@ -601,9 +601,8 @@ message Configure {
   // Relay-only: whether a serving relay may store the session. Children ignore
   // it.
   Persistence persistence = 12;
-  // Relay-only: directories a serving relay mounts into the session's sandbox
-  // from its own store and serves itself. Children ignore it; the subprocess
-  // transport refuses a session that names any.
+  // Server-only: remote volumes the client asks a server to mount within the
+  // sandbox. Children ignore it.
   repeated VolumeMount volumes = 13;
 }
 
@@ -617,32 +616,29 @@ enum Persistence {
   PERSISTENCE_STORED = 2;
 }
 
-// One volume mounted into a session by a serving relay. See
-// `Configure.volumes`.
+// A remote volume a client asks a server to mount within the sandbox.
 message VolumeMount {
   // Absolute, normalized sandbox path the volume appears at.
   string virtual_path = 1;
-  // The volume's ID, chosen by the host; knowing it is the capability to
-  // mount it.
+  // Identifies the volume.
   Uuid volume_id = 2;
   VolumeMode mode = 3;
-  // Mount-relative paths to pull into memory before the session runs; a
-  // trailing `/` names a directory whose every file is pulled.
+  // Mount-relative paths to load before the session runs; a trailing `/`
+  // names a directory.
   repeated string eager = 4;
-  // A label the relay records with the volume the first time it is mounted
-  // and never rewrites; absent, the record has no name.
+  // Optional label for the volume.
   optional string name = 5;
 }
 
-// What a mount lets the sandbox do to its volume; children ignore it.
+// What the sandbox may do to a mounted volume.
 enum VolumeMode {
   // Read as read-only.
   VOLUME_MODE_UNSPECIFIED = 0;
   // Writes raise `PermissionError`.
   VOLUME_MODE_READ_ONLY = 1;
-  // Writes go to the store as they happen; the last writer wins.
+  // Writes are persisted to the volume.
   VOLUME_MODE_READ_WRITE = 2;
-  // Writes are kept in the relay's memory for the connection, never stored.
+  // Writes are visible to the session but never persisted.
   VOLUME_MODE_OVERLAY = 3;
 }
 

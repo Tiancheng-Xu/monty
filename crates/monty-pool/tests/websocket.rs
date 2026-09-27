@@ -18,7 +18,7 @@ use std::{
 use monty_pool::telemetry::{TelemetryAdapter, configure_telemetry_adapter};
 use monty_pool::{
     Checkout, CheckoutOptions, MountSpec, MountSpecMode, Persistence, Pool, PoolConfig, PoolError, PrintFuture,
-    ReplConfig, ResumeValue, TurnEvent, VolumeMode, VolumeMount,
+    ReplConfig, ResumeValue, TurnEvent, VolumeMount,
 };
 use monty_proto::{MAX_FRAME_LEN, WireFunctionCall, decode_frame, encode_to_capped_vec, pb, resume_call_from_proto};
 use monty_types::{CallArgs, ExtFunctionResult, MontyObject, MontyUuid, PrintStream, ResourceLimits, SourceRange};
@@ -59,8 +59,7 @@ fn answer_requests(socket: &mut WebSocket<TcpStream>) {
     }
 }
 
-/// A mock child that also reports the `Configure` its one connection opens
-/// with — what a serving relay reads its session's mounts from.
+/// A mock child that also reports the `Configure` its one connection opens with.
 fn serve_capturing_configure(listener: &TcpListener, tx: &mpsc::Sender<pb::Configure>) {
     let (stream, _peer) = listener.accept().expect("accept");
     let mut socket = tungstenite::accept(stream).expect("ws handshake");
@@ -189,8 +188,8 @@ async fn volumes_ride_on_configure() {
     let pool = Pool::new(config).await.expect("pool");
     let repl = ReplConfig {
         volumes: vec![
-            VolumeMount::new("/data", MontyUuid::from_u128(1), VolumeMode::ReadOnly).expect("mount"),
-            VolumeMount::new("/out/", MontyUuid::from_u128(2), VolumeMode::ReadWrite)
+            VolumeMount::new("/data", MontyUuid::from_u128(1), MountSpecMode::ReadOnly).expect("mount"),
+            VolumeMount::new("/out/", MontyUuid::from_u128(2), MountSpecMode::ReadWrite)
                 .expect("mount")
                 .with_eager(["config.json", "models/"])
                 .with_name("scratch")

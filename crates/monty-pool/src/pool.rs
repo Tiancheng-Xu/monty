@@ -107,9 +107,11 @@ impl Pool {
     /// up to `checkout_timeout` (forever when `None`) before failing with
     /// [`PoolError::Exhausted`].
     pub async fn checkout_with(&self, repl: &ReplConfig, mut options: CheckoutOptions) -> Result<Checkout, PoolError> {
-        // only a serving relay has a store to mount volumes from
+        // only a server can mount volumes
         if !repl.volumes.is_empty() && !self.inner.config.transport.is_websocket() {
-            return Err(PoolError::Spawn("volumes need a serving relay".to_owned()));
+            return Err(PoolError::Spawn(
+                "volumes are not supported by the subprocess transport".to_owned(),
+            ));
         }
         // ahead of the caller's headers, which stay last-wins
         #[cfg(feature = "telemetry")]

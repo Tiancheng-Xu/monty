@@ -25,7 +25,7 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 #[cfg(unix)]
 use insta::assert_snapshot;
 use monty_pool::{
-    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent, VolumeMode,
+    MountSpec, MountSpecMode, Pool, PoolConfig, PoolError, PrintFuture, ReplConfig, ResumeValue, TurnEvent,
     VolumeMount, on_print_sync,
 };
 // only the unix-gated raw-path test forges worker frames
@@ -153,13 +153,13 @@ fn write_fake_monty(dir: &Path, script: &str) -> PathBuf {
 // Happy path
 // =============================================================================
 
-/// A subprocess worker has no store: a `ReplConfig` naming a volume is refused
+/// A `ReplConfig` naming a volume is refused on the subprocess transport
 /// before anything is spawned, and the pool stays usable.
 #[tokio::test]
 async fn volumes_are_refused_on_the_subprocess_transport() {
     let pool = Pool::new(config()).await.unwrap();
     let repl = ReplConfig {
-        volumes: vec![VolumeMount::new("/data", MontyUuid::from_u128(7), VolumeMode::default()).unwrap()],
+        volumes: vec![VolumeMount::new("/data", MontyUuid::from_u128(7), MountSpecMode::ReadOnly).unwrap()],
         ..ReplConfig::default()
     };
     let Err(err) = pool.checkout(&repl).await else {
@@ -167,7 +167,7 @@ async fn volumes_are_refused_on_the_subprocess_transport() {
     };
     assert_eq!(
         err.to_string(),
-        "failed to spawn monty worker: volumes need a serving relay"
+        "failed to spawn monty worker: volumes are not supported by the subprocess transport"
     );
     let mut session = pool.checkout(&ReplConfig::default()).await.unwrap();
     let event = session
@@ -178,13 +178,13 @@ async fn volumes_are_refused_on_the_subprocess_transport() {
     session.finish().await.unwrap();
 }
 
-/// `VolumeMount` validates what the client can check itself: the virtual path
-/// is made absolute and normalized, and a name is 1 to 128 bytes of printable text.
+/// `VolumeMount` requires an absolute virtual path, which it normalizes, and a
+/// name of 1 to 128 bytes without control characters.
 #[test]
 fn volume_mount_validates_its_arguments() {
-    let mount = VolumeMount::new("/data//models/./", MontyUuid::from_u128(1), VolumeMode::Overlay).unwrap();
+    let mount = VolumeMount::new("/data//models/./", MontyUuid::from_u128(1), MountSpecMode::Overlay).unwrap();
     assert_eq!(mount.virtual_path, "/data/models");
-    assert_eq!(mount.mode, VolumeMode::Overlay);
+    assert_eq!(mount.mode, MountSpecMode::Overlay);
     assert!(mount.eager.is_empty() && mount.name.is_none(), "{mount:?}");
     let named = mount
         .clone()
@@ -198,7 +198,11 @@ fn volume_mount_validates_its_arguments() {
         other => panic!("expected a ValueError, got {other:?}"),
     };
     assert_eq!(
-        value_error(VolumeMount::new("data", MontyUuid::from_u128(1), VolumeMode::default())),
+        value_error(VolumeMount::new(
+            "data",
+            MontyUuid::from_u128(1),
+            MountSpecMode::ReadOnly
+        )),
         "ValueError: virtual path must be absolute, got: 'data'"
     );
     assert_eq!(
@@ -212,11 +216,6 @@ fn volume_mount_validates_its_arguments() {
     assert_eq!(
         value_error(mount.with_name("tab\there")),
         "ValueError: volume name must not contain control characters"
-    );
-    assert_eq!(VolumeMode::from_mode_str("read-write"), Ok(VolumeMode::ReadWrite));
-    assert_eq!(
-        VolumeMode::from_mode_str("rw"),
-        Err("Invalid mode 'rw', expected 'read-only', 'read-write', or 'overlay'".to_owned())
     );
 }
 

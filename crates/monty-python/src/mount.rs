@@ -3,21 +3,19 @@
 //! [`PyMountDir`] stores immutable configuration for one mount point. Each
 //! feed copies that configuration into a fresh parent-side mount table, so
 //! overlay state lasts only for that feed and host paths never reach workers.
-//! [`PyVolume`] describes a directory a serving relay mounts from its own
-//! store; it is plain configuration sent on checkout.
+//! [`PyRemoteVolume`] describes a remote volume a server is asked to mount.
 
 use std::{fmt::Write as _, path::PathBuf};
 
 use monty_fs::{MountMode, MountRoot};
-use monty_pool::{MountSpec, MountSpecMode, PoolError, VolumeMode, VolumeMount};
+use monty_pool::{MountSpec, MountSpecMode, PoolError, VolumeMount};
 use monty_proto::python::{exc_monty_to_py, uuid_to_py};
 use monty_types::MontyUuid;
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     intern,
     prelude::*,
-    sync::PyOnceLock,
-    types::{PyString, PyTuple},
+    types::PyTuple,
 };
 
 use crate::pool::pool_err_to_py;
@@ -50,6 +48,7 @@ use crate::pool::pool_err_to_py;
 /// sandboxed code write `json.py`, or any module not yet imported, and the
 /// next `import` runs it. That includes imports made by `pydantic_monty`
 /// itself.
+// TODO rename to LocalVolume at v2
 #[pyclass(name = "MountDir")]
 pub struct PyMountDir {
     /// Validated configuration copied into each feed's mount table. `None`
@@ -104,18 +103,11 @@ impl PyMountDir {
         write_bytes_limit: Option<u64>,
         memory_usage_limit: u64,
     ) -> PyResult<Self> {
-        let mount_mode = MountMode::from_mode_str(mode).map_err(PyValueError::new_err)?;
+        let mode = parse_mount_mode(mode)?;
         // Held for this object's lifetime: later feeds mount the descriptor
         // rather than re-resolving `host_path`, which the sandbox can redirect.
         let root = MountRoot::open(virtual_path, &host_path).map_err(|e| exc_monty_to_py(py, e.into_exception()))?;
-        let mut spec = MountSpec::from_root(
-            root,
-            match mount_mode {
-                MountMode::ReadOnly => MountSpecMode::ReadOnly,
-                MountMode::ReadWrite => MountSpecMode::ReadWrite,
-                MountMode::OverlayMemory(_) => MountSpecMode::Overlay,
-            },
-        );
+        let mut spec = MountSpec::from_root(root, mode);
         spec.write_bytes_limit = write_bytes_limit;
         spec.memory_usage_limit = memory_usage_limit;
         Ok(Self {
@@ -203,6 +195,15 @@ impl PyMountDir {
     }
 }
 
+/// Parses the Python spelling of a mount mode, shared by `MountDir` and `RemoteVolume`.
+fn parse_mount_mode(mode: &str) -> PyResult<MountSpecMode> {
+    match MountMode::from_mode_str(mode).map_err(PyValueError::new_err)? {
+        MountMode::ReadOnly => Ok(MountSpecMode::ReadOnly),
+        MountMode::ReadWrite => Ok(MountSpecMode::ReadWrite),
+        MountMode::OverlayMemory(_) => Ok(MountSpecMode::Overlay),
+    }
+}
+
 /// Returns the Python spelling of a pool mount mode.
 fn mount_mode_name(mode: MountSpecMode) -> &'static str {
     match mode {
@@ -213,41 +214,38 @@ fn mount_mode_name(mode: MountSpecMode) -> &'static str {
 }
 
 // =============================================================================
-// Volume — a relay-served mount, sent on checkout
+// RemoteVolume — a remote volume, sent on checkout
 // =============================================================================
 
-/// A volume a serving relay mounts into a session: a directory kept in the
-/// relay's store, identified by a UUID the host chooses, and served to the
-/// sandbox by the relay itself.
+/// A remote volume a client can ask a server to mount within the sandbox.
 ///
 /// Plain data, unlike `MountDir`: nothing is opened here, so there is no
-/// `close()`. The default mode is `'read-only'`, where `MountDir` defaults to
-/// `'overlay'`, because a volume's `'overlay'` writes belong to the connection
-/// rather than a feed.
-#[pyclass(name = "Volume", module = "pydantic_monty", frozen, eq)]
+/// `close()`. The default mode is `'read-only'`, not `MountDir`'s `'overlay'`.
+#[pyclass(name = "RemoteVolume", module = "pydantic_monty", frozen, eq)]
 #[derive(PartialEq, Eq)]
-pub struct PyVolume(VolumeMount);
+pub struct PyRemoteVolume(VolumeMount);
 
 #[pymethods]
-impl PyVolume {
-    /// Describes a mount of volume `id` at `virtual_path`.
+impl PyRemoteVolume {
+    /// Describes a mount of a volume at `virtual_path`; without an `id` the
+    /// volume gets a fresh uuid4, naming a new, empty volume.
     ///
     /// # Raises
-    /// `ValueError` if `id` is not a UUID, `virtual_path` is not absolute,
-    /// `mode` is not one of the three words, or `name` is empty, over 128
-    /// bytes or contains a control character.
+    /// `TypeError` if `id` is not a `uuid.UUID`; `ValueError` if `virtual_path`
+    /// is not absolute, `mode` is not one of the three words, or `name` is
+    /// empty, over 128 bytes or contains a control character.
     #[new]
-    #[pyo3(signature = (id, virtual_path, *, mode = "read-only", eager = None, name = None))]
+    #[pyo3(signature = (virtual_path, *, id = None, mode = "read-only", eager = None, name = None))]
     fn new(
-        id: &Bound<'_, PyAny>,
+        py: Python<'_>,
         virtual_path: &str,
+        id: Option<&Bound<'_, PyAny>>,
         mode: &str,
         eager: Option<Vec<String>>,
         name: Option<&str>,
     ) -> PyResult<Self> {
-        let py = id.py();
-        let mode = VolumeMode::from_mode_str(mode).map_err(PyValueError::new_err)?;
-        let mount = VolumeMount::new(virtual_path, volume_id_from_py(id)?, mode)
+        let mode = parse_mount_mode(mode)?;
+        let mount = VolumeMount::new(virtual_path, volume_id_from_py(py, id)?, mode)
             .map_err(|err| volume_err_to_py(py, err))?
             .with_eager(eager.unwrap_or_default());
         let mount = match name {
@@ -272,16 +270,16 @@ impl PyVolume {
     /// The access mode: `"read-only"`, `"read-write"`, or `"overlay"`.
     #[getter]
     fn mode(&self) -> &'static str {
-        self.0.mode.as_str()
+        mount_mode_name(self.0.mode)
     }
 
-    /// The mount-relative paths pulled into the relay's memory before the session runs.
+    /// The mount-relative paths to load before the session runs.
     #[getter]
     fn eager<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, &self.0.eager)
     }
 
-    /// The label recorded by the volume's first mount, if any.
+    /// The volume's label, if any.
     #[getter]
     fn name(&self) -> Option<&str> {
         self.0.name.as_deref()
@@ -290,10 +288,10 @@ impl PyVolume {
     fn __repr__(&self) -> String {
         let mount = &self.0;
         let mut repr = format!(
-            "Volume(id='{}', virtual_path='{}', mode='{}'",
-            mount.volume_id,
+            "RemoteVolume(virtual_path='{}', id='{}', mode='{}'",
             mount.virtual_path,
-            mount.mode.as_str()
+            mount.volume_id,
+            mount_mode_name(mount.mode)
         );
         if !mount.eager.is_empty() {
             // `{:?}` of a `Vec<String>` is a valid Python list literal for ASCII names
@@ -307,7 +305,7 @@ impl PyVolume {
     }
 }
 
-impl PyVolume {
+impl PyRemoteVolume {
     /// The mount as the pool sends it on `Configure`.
     pub(crate) fn mount(&self) -> VolumeMount {
         self.0.clone()
@@ -323,18 +321,14 @@ fn volume_err_to_py(py: Python<'_>, err: PoolError) -> PyErr {
     }
 }
 
-/// Reads a volume ID given as a `str` (any form `uuid.UUID` accepts) or a
-/// `uuid.UUID`, going through `uuid.UUID` so the error is CPython's own.
-fn volume_id_from_py(id: &Bound<'_, PyAny>) -> PyResult<MontyUuid> {
-    static UUID_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-    let py = id.py();
-    let class = UUID_CLASS.import(py, "uuid", "UUID")?;
-    let uuid = if id.is_instance_of::<PyString>() {
-        class.call1((id,))?
-    } else if id.is_instance(class)? {
-        id.clone()
-    } else {
-        return Err(PyTypeError::new_err("id must be a str or uuid.UUID"));
+/// Reads a volume ID from a `uuid.UUID`, or makes one with `uuid.uuid4()`
+/// when none is given.
+fn volume_id_from_py(py: Python<'_>, id: Option<&Bound<'_, PyAny>>) -> PyResult<MontyUuid> {
+    let uuid_module = py.import(intern!(py, "uuid"))?;
+    let uuid = match id {
+        Some(id) if id.is_instance(&uuid_module.getattr(intern!(py, "UUID"))?)? => id.clone(),
+        Some(_) => return Err(PyTypeError::new_err("id must be a uuid.UUID or None")),
+        None => uuid_module.call_method0(intern!(py, "uuid4"))?,
     };
     let bytes: [u8; 16] = uuid.getattr(intern!(py, "bytes"))?.extract()?;
     Ok(MontyUuid::from_bytes(bytes))

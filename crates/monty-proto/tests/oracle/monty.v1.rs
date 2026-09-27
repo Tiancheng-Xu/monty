@@ -784,31 +784,27 @@ pub struct Configure {
     /// it.
     #[prost(enumeration = "Persistence", tag = "12")]
     pub persistence: i32,
-    /// Relay-only: directories a serving relay mounts into the session's sandbox
-    /// from its own store and serves itself. Children ignore it; the subprocess
-    /// transport refuses a session that names any.
+    /// Server-only: remote volumes the client asks a server to mount within the
+    /// sandbox. Children ignore it.
     #[prost(message, repeated, tag = "13")]
     pub volumes: ::prost::alloc::vec::Vec<VolumeMount>,
 }
-/// One volume mounted into a session by a serving relay. See
-/// `Configure.volumes`.
+/// A remote volume a client asks a server to mount within the sandbox.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct VolumeMount {
     /// Absolute, normalized sandbox path the volume appears at.
     #[prost(string, tag = "1")]
     pub virtual_path: ::prost::alloc::string::String,
-    /// The volume's ID, chosen by the host; knowing it is the capability to
-    /// mount it.
+    /// Identifies the volume.
     #[prost(message, optional, tag = "2")]
     pub volume_id: ::core::option::Option<Uuid>,
     #[prost(enumeration = "VolumeMode", tag = "3")]
     pub mode: i32,
-    /// Mount-relative paths to pull into memory before the session runs; a
-    /// trailing `/` names a directory whose every file is pulled.
+    /// Mount-relative paths to load before the session runs; a trailing `/`
+    /// names a directory.
     #[prost(string, repeated, tag = "4")]
     pub eager: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// A label the relay records with the volume the first time it is mounted
-    /// and never rewrites; absent, the record has no name.
+    /// Optional label for the volume.
     #[prost(string, optional, tag = "5")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1460,7 +1456,7 @@ impl Persistence {
         }
     }
 }
-/// What a mount lets the sandbox do to its volume; children ignore it.
+/// What the sandbox may do to a mounted volume.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum VolumeMode {
@@ -1468,9 +1464,9 @@ pub enum VolumeMode {
     Unspecified = 0,
     /// Writes raise `PermissionError`.
     ReadOnly = 1,
-    /// Writes go to the store as they happen; the last writer wins.
+    /// Writes are persisted to the volume.
     ReadWrite = 2,
-    /// Writes are kept in the relay's memory for the connection, never stored.
+    /// Writes are visible to the session but never persisted.
     Overlay = 3,
 }
 impl VolumeMode {

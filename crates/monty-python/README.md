@@ -38,21 +38,16 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
-A server with a store can mount volumes, directories it keeps in that store, into a session; `Volume` names one by its
-UUID and the sandbox path it appears at, defaulting to `mode='read-only'`:
+`RemoteVolume` asks the server to mount a remote volume within the sandbox, read-only by default:
 
 ```python test="skip"
 from uuid import UUID
 
-from pydantic_monty import AsyncMontyWebsocket, Volume
+from pydantic_monty import AsyncMontyWebsocket, RemoteVolume
 
 
 async def main() -> None:
-    data = Volume(
-        UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
-        '/data',
-        eager=['config.json'],
-    )
+    data = RemoteVolume('/data', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
     async with AsyncMontyWebsocket('...') as pool:
         async with pool.checkout(volumes=data) as session:
             print(await session.feed_run("open('/data/config.json').read()"))

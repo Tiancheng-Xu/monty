@@ -45,7 +45,7 @@ __all__ = [
     'MontyRuntimeError',
     'MontyTypingError',
     'MountDir',
-    'Volume',
+    'RemoteVolume',
     'MontyComplete',
     'FunctionSnapshot',
     'NameLookupSnapshot',
@@ -90,6 +90,7 @@ class CollectString:
     def output(self) -> str:
         """Collected output so far."""
 
+# TODO rename to LocalVolume at v2, also move it to configure to match RemoteVolume
 @final
 class MountDir:
     """A mount point mapping a virtual path to a host directory.
@@ -203,45 +204,28 @@ class MountDir:
     def __exit__(self, *args: object) -> bool: ...
 
 @final
-class Volume:
-    """A volume a serving relay mounts into a session.
+class RemoteVolume:
+    """A remote volume a client can ask a server to mount within the sandbox.
 
-    A volume is a directory the server keeps in its own store, identified by a
-    UUID the host chooses; knowing the ID is the capability to mount it, and a
-    volume nobody has written to mounts as an empty directory. The server
-    serves the sandbox's filesystem calls to it itself, so nothing about it
-    reaches this process: `Volume` is plain configuration, passed to
-    `AsyncMontyWebsocket.checkout(volumes=...)`, with no `close()`. Local
-    workers have no store, so `Monty` and `AsyncMonty` do not take volumes.
+    Passed to `AsyncMontyWebsocket.checkout(volumes=...)`. It is plain
+    configuration: nothing is opened here, so there is no `close()`. Local
+    workers mount no volumes, so `Monty` and `AsyncMonty` do not take any.
 
     The modes are `MountDir`'s three words, but the default is `'read-only'`:
 
-    - `'read-only'` — reads from the store; writes raise `PermissionError`.
-    - `'read-write'` — writes go to the store as they happen; the last writer wins.
-    - `'overlay'` — reads fall through to the store; writes are kept in the
-      server's memory for the connection: they survive feeds, are lost when the
-      session is resumed on another connection, and are never stored.
-
-    `eager` names mount-relative paths the server pulls into memory before any
-    code runs (a trailing `/` pulls a whole directory); a read of an eager file
-    never asks the store, so it is as of the pull. A missing eager file refuses
-    the session. `name` is a label the server records with the volume the
-    first time it is mounted and never rewrites; it is not a lookup key.
-
-    A server refuses a checkout whose volumes it cannot mount (a duplicate or
-    nested virtual path, a volume mounted twice, more than 16 mounts or 64
-    eager entries, a missing eager file) with `MontyCrashedError`.
+    - `'read-only'` — writes raise `PermissionError`.
+    - `'read-write'` — writes are persisted to the volume.
+    - `'overlay'` — writes are visible to the session but never persisted.
 
     ```python
     from uuid import UUID
 
-    from pydantic_monty import AsyncMontyWebsocket, Volume
+    from pydantic_monty import AsyncMontyWebsocket, RemoteVolume
 
-    data = Volume(UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'), '/data', eager=['config.json'])
-    out = Volume('6ba7b810-9dad-11d1-80b4-00c04fd430c8', '/out', mode='read-write', name='results')
+    data = RemoteVolume('/data', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
     async with AsyncMontyWebsocket('ws://127.0.0.1:8799') as pool:
-        async with pool.checkout(volumes=[data, out]) as session:
-            await session.feed_run("open('/out/summary.txt', 'w').write(open('/data/config.json').read())")
+        async with pool.checkout(volumes=data) as session:
+            await session.feed_run("open('/data/config.json').read()")
     ```
     """
 
@@ -253,26 +237,26 @@ class Volume:
 
     def __new__(
         cls,
-        id: str | uuid.UUID,
         virtual_path: str,
         *,
+        id: uuid.UUID | None = None,
         mode: Literal['read-only', 'read-write', 'overlay'] = 'read-only',
         eager: Sequence[str] | None = None,
         name: str | None = None,
-    ) -> Volume:
-        """Describe a mount; the server validates it when the session is configured.
+    ) -> RemoteVolume:
+        """Describe a mount of a volume at `virtual_path`.
 
         Arguments:
-            id: The volume's UUID, as a `uuid.UUID` or any string `uuid.UUID`
-                accepts. Raises `ValueError` for anything else.
             virtual_path: Absolute POSIX-style path the volume appears at inside
                 the sandbox; normalized here. Raises `ValueError` if not absolute.
-            mode: `'read-only'` (default), `'read-write'` or `'overlay'`; see
-                the class docstring.
-            eager: Mount-relative paths pulled into the server's memory before
-                the session runs; a trailing `/` names a directory.
-            name: A label of 1 to 128 bytes without control characters, recorded
-                by the volume's first mount only. Raises `ValueError` otherwise.
+            id: The volume's UUID. `None` (default) generates one with
+                `uuid.uuid4()`, naming a new volume; read it back from `id` to
+                mount the same volume again.
+            mode: `'read-only'` (default), `'read-write'` or `'overlay'`.
+            eager: Mount-relative paths to load before the session runs; a
+                trailing `/` names a directory.
+            name: Optional label of 1 to 128 bytes without control characters.
+                Raises `ValueError` otherwise.
         """
 
 class MontyError(Exception):
@@ -1121,7 +1105,7 @@ class AsyncMontyWebsocket:
         print_flush_interval: float | None = None,
         os_policy: OSPolicy | None = None,
         ephemeral: bool | None = None,
-        volumes: Volume | Sequence[Volume] | None = None,
+        volumes: RemoteVolume | Sequence[RemoteVolume] | None = None,
     ) -> AsyncMontySession:
         """
         Prepare a REPL session served by a dedicated remote connection.
@@ -1135,10 +1119,8 @@ class AsyncMontyWebsocket:
                 `True` means the server never stores it on its own and it gets
                 no `session_id`; `False` asks for it to be stored; `None` takes
                 the server's default. Servers that store nothing ignore it.
-            volumes: `Volume`s the server mounts into the session from its
-                store, sent with the session's configuration and re-sent when
-                the session is resumed on another connection. A server without
-                a store refuses a session that names any.
+            volumes: Remote volumes to ask the server to mount within the
+                sandbox.
         """
 
 @final

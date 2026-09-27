@@ -6,10 +6,6 @@
 //! normalization, null-byte rejection, and length limits applied uniformly
 //! across hosts.
 //!
-//! The limits and predicates are public so a host that serves a mount itself
-//! (a relay mounting directories from its own store) gives the sandbox the
-//! same view of a path as a [`MountTable`](super::MountTable) does.
-//!
 //! [`MountContext::mount_dir`]: super::common::MountContext::mount_dir
 
 use std::io::ErrorKind;

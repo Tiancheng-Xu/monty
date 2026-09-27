@@ -30,8 +30,8 @@ pub mod worker;
 /// bump.
 ///
 /// `Configure.persistence`, `Configure.volumes` and `ChildEvent.session_id`
-/// did not bump it: a serving relay and its client act on them, children
-/// ignore them, and a child that drops them loses nothing.
+/// did not bump it: a server and its client act on them, children ignore
+/// them, and a child that drops them loses nothing.
 pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Oldest [`PROTOCOL_VERSION`] this build still serves.

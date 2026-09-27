@@ -60,10 +60,8 @@ The redial uses the headers `connect_headers` returned when the session was ente
 resume fail.
 `MontyDisconnectError` is never resumed, because the request may have run.
 
-A server with a store can also mount [volumes](../../filesystem.md#volumes) into a session: directories it keeps in that
-store, named by a UUID the host chooses, and served by the server itself.
-`checkout(volumes=...)` takes them as [`Volume`][pydantic_monty.Volume]s, sent with the session's configuration and
-sent again when the session is resumed.
+`checkout(volumes=...)` asks the server to mount remote [volumes](../../filesystem.md#volumes) within the sandbox,
+each a [`RemoteVolume`][pydantic_monty.RemoteVolume].
 
 ## Dependencies
 
@@ -79,4 +77,4 @@ A Monty sandbox worker rejects non-empty installation requests with `MontyRuntim
     options:
         members:
             - AsyncMontyWebsocket
-            - Volume
+            - RemoteVolume

@@ -646,8 +646,8 @@ fn os_policy_round_trip() {
     );
 }
 
-/// Relay-only fields ride on `Configure` untouched: two mounts, one with eager
-/// entries and a name, decode as sent, uuid bytes included.
+/// `Configure.volumes` decodes as sent: two mounts, one with eager entries and
+/// a name, uuid bytes included.
 #[test]
 fn configure_volumes_round_trip() {
     let volumes = vec![

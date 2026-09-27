@@ -206,11 +206,12 @@ and [`limitations/open.md`](limitations/open.md).
 
 ## Volumes
 
-A **volume** is a directory a [`monty-server`](server.md) keeps in its own object store and mounts into a session, serving
-the sandbox's filesystem calls to it itself.
-The worker never sees those calls, and neither does your process: a [`Volume`][pydantic_monty.Volume] is plain
-configuration, passed to [`AsyncMontyWebsocket.checkout()`][pydantic_monty.AsyncMontyWebsocket.checkout] and sent with
-the session's configuration, so it is mounted again when the session is resumed on another connection.
+A [`RemoteVolume`][pydantic_monty.RemoteVolume] is a remote volume a client can ask a server to mount within the sandbox.
+It is identified by a UUID, generated when `id` is not given, and passed to
+[`AsyncMontyWebsocket.checkout()`][pydantic_monty.AsyncMontyWebsocket.checkout]; what a volume holds and where it is
+kept is up to the server.
+Local workers mount no volumes, so [`Monty`][pydantic_monty.Monty] and [`AsyncMonty`][pydantic_monty.AsyncMonty] take
+none.
 
 === "Python"
 
@@ -218,19 +219,10 @@ the session's configuration, so it is mounted again when the session is resumed 
     import asyncio
     from uuid import UUID
 
-    from pydantic_monty import AsyncMontyWebsocket, Volume
+    from pydantic_monty import AsyncMontyWebsocket, RemoteVolume
 
-    data = Volume(
-        UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'),
-        '/data',
-        eager=['config.json'],
-    )
-    out = Volume(
-        '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
-        '/out',
-        mode='read-write',
-        name='results',
-    )
+    data = RemoteVolume('/data', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
+    out = RemoteVolume('/out', mode='read-write')
 
 
     async def main() -> None:
@@ -248,49 +240,16 @@ the session's configuration, so it is mounted again when the session is resumed 
 
     The TypeScript package is subprocess-only and cannot dial a server, so it has no volumes.
 
-A volume is identified by a UUID the host chooses.
-Knowing the ID is the capability to mount it, as knowing a session ID is the capability to load it; the server never
-mints one.
-A volume exists once files have been written to it, through a `'read-write'` mount or by any tool that can write the
-server's bucket, and a volume nobody has written to mounts as an empty directory.
-Local workers have no store, so [`Monty`][pydantic_monty.Monty] and [`AsyncMonty`][pydantic_monty.AsyncMonty] take no
-volumes, and a server without a store refuses a session that names any.
-
-### Modes
-
 The modes are the three words of a [mount](#modes), with a different default:
 
-| Mode                    | Reads                     | Writes                                               |
-| ----------------------- | ------------------------- | ---------------------------------------------------- |
-| `'read-only'` (default) | from the store            | raise `PermissionError`                              |
-| `'read-write'`          | from the store            | go to the store as they happen; the last writer wins |
-| `'overlay'`             | fall through to the store | kept in the server's memory for the connection       |
+| Mode                    | Writes                                     |
+| ----------------------- | ------------------------------------------ |
+| `'read-only'` (default) | raise `PermissionError`                    |
+| `'read-write'`          | persisted to the volume                    |
+| `'overlay'`             | visible to the session but never persisted |
 
-`'overlay'` data belongs to the connection rather than a feed: it survives feeds, is lost when the session is resumed on
-another connection, and is never stored.
-
-### Eager entries and names
-
-`eager` lists mount-relative paths the server pulls into memory when the session is configured, before any code runs;
-a trailing `/` names a directory whose every file is pulled.
-A read of an eager file never asks the store, so it is as of the pull, unless the same `'read-write'` mount has since
-written it.
-Every other read sees the store as of that read.
-A missing eager file refuses the session.
-
-`name` is a label the server records beside the volume the first time it is mounted, for an operator reading the bucket.
-It is never rewritten and is not a lookup key: a later mount with another name changes nothing.
-A name is 1 to 128 bytes without control characters.
-
-### What differs from a mount
-
-The sandbox sees the same path policy and the same errors as for a mount, and symlinks never.
-Two things an object store cannot do are documented rather than hidden: `append` and a directory `rename` are not
-atomic, and `.monty-dir`, the marker for an empty directory, is a reserved name no call may use.
-Every volume call is a suspension the worker counts against `max_suspensions`.
-A server refuses a session whose volumes it cannot mount, with `MontyCrashedError`, as it refuses an unsupported
-protocol version: a virtual path shared or nested with another, a volume mounted twice, more than 16 mounts or 64 eager
-entries, or a missing eager file.
+`eager` lists mount-relative paths to load before the session runs, with a trailing `/` naming a directory, and `name`
+is an optional label for the volume.
 
 ## I/O timeouts and cancellation
 

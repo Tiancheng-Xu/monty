@@ -507,7 +507,7 @@ impl Child {
             os_policy: _,
             // a relay's concern; the child never stores sessions
             persistence: _,
-            // a relay's concern; the child has no store to mount from
+            // a server's concern; the child mounts nothing
             volumes: _,
         } = *config;
         let limits = limits.unwrap_or_default().into();

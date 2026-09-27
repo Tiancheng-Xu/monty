@@ -30,7 +30,7 @@ from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request
 
-from pydantic_monty import AsyncMontyWebsocket, MontyRuntimeError, MontyShutdown, Volume
+from pydantic_monty import AsyncMontyWebsocket, MontyRuntimeError, MontyShutdown, RemoteVolume
 from pydantic_monty._binary import find_monty_binary
 
 _RELAY_SCRIPT = Path(__file__).resolve().parents[3] / 'scripts' / 'websocket_relay.py'
@@ -246,7 +246,7 @@ def _proto_repeated(buf: bytes, field: int) -> list[bytes]:
 
 
 def _decode_volume(buf: bytes) -> dict[str, Any]:
-    """One `VolumeMount` message as a dict, the way a relay reads it."""
+    """One `VolumeMount` message as a dict."""
     fields = _proto_fields(buf)
     return {
         'virtual_path': fields[_VOLUME_PATH].decode(),
@@ -499,30 +499,29 @@ async def test_checkout_rejects_unknown_limits():
 
 
 def test_volume_is_plain_data():
-    volume = Volume('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', '/data//models/./')
+    volume = RemoteVolume('/data//models/./', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
     assert volume.id == UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13')
     assert volume.virtual_path == snapshot('/data/models')
     assert volume.mode == snapshot('read-only')
     assert volume.eager == snapshot(())
     assert volume.name is None
     assert repr(volume) == snapshot(
-        "Volume(id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', virtual_path='/data/models', mode='read-only')"
+        "RemoteVolume(virtual_path='/data/models', id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', mode='read-only')"
     )
-    assert volume == Volume(UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'), '/data/models')
-    assert volume != Volume(UUID(int=2), '/data/models')
+    assert volume == RemoteVolume('/data/models', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
+    assert volume != RemoteVolume('/data/models', id=UUID(int=2))
 
-    named = Volume(UUID(int=2), '/out', mode='read-write', eager=('config.json', 'models/'), name='scratch')
+    named = RemoteVolume('/out', id=UUID(int=2), mode='read-write', eager=('config.json', 'models/'), name='scratch')
     assert named.eager == snapshot(('config.json', 'models/'))
     assert named.name == snapshot('scratch')
     assert repr(named) == snapshot(
-        "Volume(id='00000000-0000-0000-0000-000000000002', virtual_path='/out', mode='read-write', eager=[\"config.json\", \"models/\"], name='scratch')"
+        "RemoteVolume(virtual_path='/out', id='00000000-0000-0000-0000-000000000002', mode='read-write', eager=[\"config.json\", \"models/\"], name='scratch')"
     )
 
 
 @pytest.mark.parametrize(
     ('kwargs', 'message'),
     [
-        ({'id': 'not-a-uuid', 'virtual_path': '/data'}, 'badly formed hexadecimal UUID string'),
         ({'id': UUID(int=1), 'virtual_path': 'data'}, "virtual path must be absolute, got: 'data'"),
         (
             {'id': UUID(int=1), 'virtual_path': '/data', 'mode': 'rw'},
@@ -541,22 +540,30 @@ def test_volume_is_plain_data():
 )
 def test_volume_rejects_bad_arguments(kwargs: dict[str, Any], message: str):
     with pytest.raises(ValueError) as exc_info:
-        Volume(**kwargs)
+        RemoteVolume(**kwargs)
     assert str(exc_info.value) == message
+
+
+def test_volume_generates_an_id():
+    first, second = RemoteVolume('/data'), RemoteVolume('/data')
+    assert isinstance(first.id, UUID)
+    assert first.id.version == snapshot(4)
+    assert first.id != second.id
+    assert first != second
 
 
 def test_volume_id_type():
     with pytest.raises(TypeError) as exc_info:
-        Volume(1, '/data')  # pyright: ignore[reportArgumentType]
-    assert str(exc_info.value) == snapshot('id must be a str or uuid.UUID')
+        RemoteVolume('/data', id='0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13')  # pyright: ignore[reportArgumentType]
+    assert str(exc_info.value) == snapshot('id must be a uuid.UUID or None')
 
 
 async def test_volumes_ride_on_configure(capturing_server: tuple[str, _StoringServer]):
     """`checkout(volumes=...)` puts the mounts on the `Configure` the session opens
     with, as given; the child ignores them, so the session still runs."""
     url, server = capturing_server
-    data = Volume('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13', '/data')
-    out = Volume(UUID(int=2), '/out/', mode='read-write', eager=['config.json', 'models/'], name='scratch')
+    data = RemoteVolume('/data', id=UUID('0d1f3c9a-5b7e-4c21-9f8a-2e6b4d0c7a13'))
+    out = RemoteVolume('/out/', id=UUID(int=2), mode='read-write', eager=['config.json', 'models/'], name='scratch')
     async with AsyncMontyWebsocket(url, request_timeout=30.0) as pool:
         async with pool.checkout(volumes=[data, out]) as session:
             assert await session.feed_run('1 + 1') == snapshot(2)
@@ -604,7 +611,7 @@ async def test_checkout_rejects_non_volumes(ws_url: str):
     async with AsyncMontyWebsocket(ws_url, request_timeout=30.0) as pool:
         with pytest.raises(TypeError) as exc_info:
             pool.checkout(volumes=['/data'])  # pyright: ignore[reportArgumentType]
-        assert str(exc_info.value) == snapshot('volumes must be a Volume, a sequence of Volume, or None')
+        assert str(exc_info.value) == snapshot('volumes must be a RemoteVolume, a sequence of RemoteVolume, or None')
 
 
 async def test_plain_relay_names_no_session(ws_url: str):

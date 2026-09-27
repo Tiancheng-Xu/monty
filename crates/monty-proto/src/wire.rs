@@ -1001,8 +1001,7 @@ pub(crate) fn uuid_to_pb(uuid: &MontyUuid) -> pb::Uuid {
     pb::Uuid::from(uuid)
 }
 
-/// The wire `Uuid` message: 16 raw bytes. Public so hosts can fill a uuid
-/// field of a request (`VolumeMount.volume_id`) without touching `data`.
+/// The wire `Uuid` message: 16 raw bytes.
 impl From<&MontyUuid> for pb::Uuid {
     fn from(uuid: &MontyUuid) -> Self {
         Self {

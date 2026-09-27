@@ -76,7 +76,7 @@ use crate::{
     },
     get_not_handled,
     limits::extract_limits,
-    mount::{PyMountDir, PyVolume},
+    mount::{PyMountDir, PyRemoteVolume},
     os_policy::OsPolicyArg,
     print_target::PrintTarget,
     snapshot::{DriveContext, build_snapshot, feed_start_async, feed_start_sync},
@@ -2146,22 +2146,21 @@ fn extract_mount_specs(mount: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<MountSp
     ))
 }
 
-/// Extracts `Volume | Sequence[Volume] | None` into the mounts a serving relay
-/// reads from `Configure`; the relay validates them as a set.
+/// Extracts `RemoteVolume | Sequence[RemoteVolume] | None` into the mounts sent on `Configure`.
 fn extract_volumes(volumes: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<VolumeMount>> {
     let Some(volumes) = volumes else {
         return Ok(vec![]);
     };
-    if let Ok(single) = volumes.extract::<PyRef<'_, PyVolume>>() {
+    if let Ok(single) = volumes.extract::<PyRef<'_, PyRemoteVolume>>() {
         return Ok(vec![single.mount()]);
     }
-    let type_error = || PyTypeError::new_err("volumes must be a Volume, a sequence of Volume, or None");
+    let type_error = || PyTypeError::new_err("volumes must be a RemoteVolume, a sequence of RemoteVolume, or None");
     volumes
         .try_iter()
         .map_err(|_| type_error())?
         .map(|item| {
             Ok(item?
-                .extract::<PyRef<'_, PyVolume>>()
+                .extract::<PyRef<'_, PyRemoteVolume>>()
                 .map_err(|_| type_error())?
                 .mount())
         })
