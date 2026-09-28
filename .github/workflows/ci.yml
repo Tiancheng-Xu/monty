@@ -1095,11 +1095,11 @@ jobs:
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             triple: linux-x64-gnu
-            napi-cross: x86_64
+            napi-cross: true
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             triple: linux-arm64-gnu
-            napi-cross: aarch64
+            napi-cross: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -1127,18 +1127,13 @@ jobs:
         run: npm install
         working-directory: crates/monty-js
 
-      # `--use-napi-cross` needs this optional peer of `@napi-rs/cross-toolchain`, and
-      # silently falls back to the host toolchain when it is missing.
-      - name: Install the napi-rs cross toolchain
-        if: matrix.settings.napi-cross
-        run: npm install --no-save @napi-rs/cross-toolchain-x64-target-${{ matrix.settings.napi-cross }}@1.0.3
-        working-directory: crates/monty-js
-
+      # `--use-napi-cross` downloads the napi-rs cross toolchain itself.
       - name: Build the napi shared library
         run: npx napi build --platform --release --esm --target ${{ matrix.settings.target }} ${{ matrix.settings.napi-cross && '--use-napi-cross' || '' }}
         working-directory: crates/monty-js
 
-      # Guard against the silent fallback above: fail if the addon needs a glibc newer than 2.17.
+      # If the toolchain download fails, the CLI only warns and builds with the host
+      # toolchain, so fail if the addon needs a glibc newer than 2.17.
       - name: Check the glibc floor
         if: matrix.settings.napi-cross
         run: |
